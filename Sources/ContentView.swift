@@ -44,16 +44,16 @@ func cmuxAccentNSColor(for colorScheme: ColorScheme) -> NSColor {
     switch colorScheme {
     case .dark:
         return NSColor(
-            srgbRed: 0,
-            green: 145.0 / 255.0,
-            blue: 1.0,
+            srgbRed: 0.0,
+            green: 0.70,
+            blue: 0.55,
             alpha: 1.0
         )
     default:
         return NSColor(
-            srgbRed: 0,
-            green: 136.0 / 255.0,
-            blue: 1.0,
+            srgbRed: 0.0,
+            green: 0.56,
+            blue: 0.42,
             alpha: 1.0
         )
     }
@@ -2667,6 +2667,7 @@ struct ContentView: View {
     private var sidebarView: some View {
         VerticalTabsSidebar(
             updateViewModel: updateViewModel,
+            fileExplorerStore: fileExplorerStore,
             fileExplorerState: fileExplorerState,
             onSendFeedback: presentFeedbackComposer,
             selection: $sidebarSelectionState.selection,
@@ -2742,9 +2743,9 @@ struct ContentView: View {
                     }
                 }
             }
-            .opacity(sidebarSelectionState.selection == .tabs ? 1 : 0)
-            .allowsHitTesting(sidebarSelectionState.selection == .tabs)
-            .accessibilityHidden(sidebarSelectionState.selection != .tabs)
+            .opacity(sidebarSelectionState.selection == .notifications ? 0 : 1)
+            .allowsHitTesting(sidebarSelectionState.selection != .notifications)
+            .accessibilityHidden(sidebarSelectionState.selection == .notifications)
 
             NotificationsPage(selection: $sidebarSelectionState.selection)
                 .opacity(sidebarSelectionState.selection == .notifications ? 1 : 0)
@@ -2764,7 +2765,9 @@ struct ContentView: View {
         // File explorer is always in the view tree. Visibility is controlled by
         // frame width (0 when hidden), avoiding SwiftUI view insertion/removal
         // and all associated transition animations.
-        let explorerVisible = fileExplorerState.isVisible && fileExplorerState.isFeatureEnabled
+        let explorerVisible = fileExplorerState.isVisible &&
+            fileExplorerState.isFeatureEnabled &&
+            sidebarSelectionState.selection != .files
         return HStack(spacing: 0) {
             terminalContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -3698,7 +3701,8 @@ struct ContentView: View {
                 windowId: windowId,
                 tabManager: tabManager,
                 sidebarState: sidebarState,
-                sidebarSelectionState: sidebarSelectionState
+                sidebarSelectionState: sidebarSelectionState,
+                fileExplorerState: fileExplorerState
             )
             installFileDropOverlay(on: window, tabManager: tabManager)
         }))
@@ -10088,6 +10092,7 @@ private struct SidebarTabItemPresentationSnapshot: Equatable {
 
 struct VerticalTabsSidebar: View {
     @ObservedObject var updateViewModel: UpdateViewModel
+    @ObservedObject var fileExplorerStore: FileExplorerStore
     @ObservedObject var fileExplorerState: FileExplorerState
     let onSendFeedback: () -> Void
     @EnvironmentObject var tabManager: TabManager
@@ -10144,106 +10149,139 @@ struct VerticalTabsSidebar: View {
 
         VStack(spacing: 0) {
             GeometryReader { proxy in
-                ScrollView {
-                    VStack(spacing: 0) {
-                        // Space for traffic lights / fullscreen controls
-                        Spacer()
-                            .frame(height: trafficLightPadding)
+                VStack(spacing: 0) {
+                    // Space for traffic lights / fullscreen controls
+                    Spacer()
+                        .frame(height: trafficLightPadding)
 
-                        // Workspaces are bounded, so prefer a non-lazy stack here.
-                        // LazyVStack + drag-state invalidations can recurse through layout.
-                        VStack(spacing: tabRowSpacing) {
-                            ForEach(tabs, id: \.id) { tab in
-                                let index = tabIndexById[tab.id] ?? 0
-                                let usesSelectedContextMenuTargets = selectedTabIds.contains(tab.id)
-                                let contextMenuWorkspaceIds = usesSelectedContextMenuTargets
-                                    ? selectedContextTargetIds
-                                    : [tab.id]
-                                let remoteContextMenuWorkspaceIds = usesSelectedContextMenuTargets
-                                    ? selectedRemoteContextMenuWorkspaceIds
-                                    : (tab.isRemoteWorkspace ? [tab.id] : [])
-                                let allRemoteContextMenuTargetsConnecting = usesSelectedContextMenuTargets
-                                    ? allSelectedRemoteContextMenuTargetsConnecting
-                                    : (tab.isRemoteWorkspace && tab.remoteConnectionState == .connecting)
-                                let allRemoteContextMenuTargetsDisconnected = usesSelectedContextMenuTargets
-                                    ? allSelectedRemoteContextMenuTargetsDisconnected
-                                    : (tab.isRemoteWorkspace && tab.remoteConnectionState == .disconnected)
-                                let liveUnreadCount = notificationStore.unreadCount(forTabId: tab.id)
-                                let liveLatestNotificationText: String? = {
-                                    guard showsSidebarNotificationMessage,
-                                          let notification = notificationStore.latestNotification(forTabId: tab.id) else {
-                                        return nil
+                    SidebarActivitySwitcher(selection: $selection, fileExplorerState: fileExplorerState)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 6)
+
+                    Group {
+                        switch selection {
+                        case .tabs:
+                            ScrollView {
+                                VStack(spacing: 0) {
+                                    // Workspaces are bounded, so prefer a non-lazy stack here.
+                                    // LazyVStack + drag-state invalidations can recurse through layout.
+                                    VStack(spacing: tabRowSpacing) {
+                                        ForEach(tabs, id: \.id) { tab in
+                                            let index = tabIndexById[tab.id] ?? 0
+                                            let usesSelectedContextMenuTargets = selectedTabIds.contains(tab.id)
+                                            let contextMenuWorkspaceIds = usesSelectedContextMenuTargets
+                                                ? selectedContextTargetIds
+                                                : [tab.id]
+                                            let remoteContextMenuWorkspaceIds = usesSelectedContextMenuTargets
+                                                ? selectedRemoteContextMenuWorkspaceIds
+                                                : (tab.isRemoteWorkspace ? [tab.id] : [])
+                                            let allRemoteContextMenuTargetsConnecting = usesSelectedContextMenuTargets
+                                                ? allSelectedRemoteContextMenuTargetsConnecting
+                                                : (tab.isRemoteWorkspace && tab.remoteConnectionState == .connecting)
+                                            let allRemoteContextMenuTargetsDisconnected = usesSelectedContextMenuTargets
+                                                ? allSelectedRemoteContextMenuTargetsDisconnected
+                                                : (tab.isRemoteWorkspace && tab.remoteConnectionState == .disconnected)
+                                            let liveUnreadCount = notificationStore.unreadCount(forTabId: tab.id)
+                                            let liveLatestNotificationText: String? = {
+                                                guard showsSidebarNotificationMessage,
+                                                      let notification = notificationStore.latestNotification(forTabId: tab.id) else {
+                                                    return nil
+                                                }
+                                                let text = notification.body.isEmpty ? notification.title : notification.body
+                                                let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                                                return trimmed.isEmpty ? nil : trimmed
+                                            }()
+                                            let liveShowsModifierShortcutHints = modifierKeyMonitor.isModifierPressed
+                                            let livePresentation = SidebarTabItemPresentationSnapshot(
+                                                tabId: tab.id,
+                                                unreadCount: liveUnreadCount,
+                                                latestNotificationText: liveLatestNotificationText,
+                                                showsModifierShortcutHints: liveShowsModifierShortcutHints
+                                            )
+                                            let frozenPresentation = frozenTabItemPresentation?.tabId == tab.id
+                                                ? frozenTabItemPresentation
+                                                : nil
+                                            TabItemView(
+                                                tabManager: tabManager,
+                                                notificationStore: notificationStore,
+                                                tab: tab,
+                                                index: index,
+                                                isActive: tabManager.selectedTabId == tab.id,
+                                                workspaceShortcutDigit: WorkspaceShortcutMapper.digitForWorkspace(
+                                                    at: index,
+                                                    workspaceCount: workspaceCount
+                                                ),
+                                                workspaceShortcutModifierSymbol: workspaceNumberShortcut.numberedDigitHintPrefix,
+                                                canCloseWorkspace: canCloseWorkspace,
+                                                accessibilityWorkspaceCount: workspaceCount,
+                                                unreadCount: frozenPresentation?.unreadCount ?? liveUnreadCount,
+                                                latestNotificationText: frozenPresentation?.latestNotificationText ?? liveLatestNotificationText,
+                                                rowSpacing: tabRowSpacing,
+                                                setSelectionToTabs: { selection = .tabs },
+                                                selectedTabIds: $selectedTabIds,
+                                                lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
+                                                showsModifierShortcutHints: frozenPresentation?.showsModifierShortcutHints ?? liveShowsModifierShortcutHints,
+                                                dragAutoScrollController: dragAutoScrollController,
+                                                draggedTabId: $draggedTabId,
+                                                dropIndicator: $dropIndicator,
+                                                contextMenuWorkspaceIds: contextMenuWorkspaceIds,
+                                                remoteContextMenuWorkspaceIds: remoteContextMenuWorkspaceIds,
+                                                allRemoteContextMenuTargetsConnecting: allRemoteContextMenuTargetsConnecting,
+                                                allRemoteContextMenuTargetsDisconnected: allRemoteContextMenuTargetsDisconnected,
+                                                settings: tabItemSettings,
+                                                livePresentation: livePresentation,
+                                                frozenPresentation: $frozenTabItemPresentation
+                                            )
+                                            .equatable()
+                                        }
                                     }
-                                    let text = notification.body.isEmpty ? notification.title : notification.body
-                                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    return trimmed.isEmpty ? nil : trimmed
-                                }()
-                                let liveShowsModifierShortcutHints = modifierKeyMonitor.isModifierPressed
-                                let livePresentation = SidebarTabItemPresentationSnapshot(
-                                    tabId: tab.id,
-                                    unreadCount: liveUnreadCount,
-                                    latestNotificationText: liveLatestNotificationText,
-                                    showsModifierShortcutHints: liveShowsModifierShortcutHints
-                                )
-                                let frozenPresentation = frozenTabItemPresentation?.tabId == tab.id
-                                    ? frozenTabItemPresentation
-                                    : nil
-                                TabItemView(
-                                    tabManager: tabManager,
-                                    notificationStore: notificationStore,
-                                    tab: tab,
-                                    index: index,
-                                    isActive: tabManager.selectedTabId == tab.id,
-                                    workspaceShortcutDigit: WorkspaceShortcutMapper.digitForWorkspace(
-                                        at: index,
-                                        workspaceCount: workspaceCount
-                                    ),
-                                    workspaceShortcutModifierSymbol: workspaceNumberShortcut.numberedDigitHintPrefix,
-                                    canCloseWorkspace: canCloseWorkspace,
-                                    accessibilityWorkspaceCount: workspaceCount,
-                                    unreadCount: frozenPresentation?.unreadCount ?? liveUnreadCount,
-                                    latestNotificationText: frozenPresentation?.latestNotificationText ?? liveLatestNotificationText,
-                                    rowSpacing: tabRowSpacing,
-                                    setSelectionToTabs: { selection = .tabs },
-                                    selectedTabIds: $selectedTabIds,
-                                    lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
-                                    showsModifierShortcutHints: frozenPresentation?.showsModifierShortcutHints ?? liveShowsModifierShortcutHints,
-                                    dragAutoScrollController: dragAutoScrollController,
-                                    draggedTabId: $draggedTabId,
-                                    dropIndicator: $dropIndicator,
-                                    contextMenuWorkspaceIds: contextMenuWorkspaceIds,
-                                    remoteContextMenuWorkspaceIds: remoteContextMenuWorkspaceIds,
-                                    allRemoteContextMenuTargetsConnecting: allRemoteContextMenuTargetsConnecting,
-                                    allRemoteContextMenuTargetsDisconnected: allRemoteContextMenuTargetsDisconnected,
-                                    settings: tabItemSettings,
-                                    livePresentation: livePresentation,
-                                    frozenPresentation: $frozenTabItemPresentation
-                                )
-                                .equatable()
-                            }
-                        }
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 8)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                        SidebarEmptyArea(
-                            rowSpacing: tabRowSpacing,
-                            selection: $selection,
-                            selectedTabIds: $selectedTabIds,
-                            lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
-                            dragAutoScrollController: dragAutoScrollController,
-                            draggedTabId: $draggedTabId,
-                            dropIndicator: $dropIndicator
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    SidebarEmptyArea(
+                                        rowSpacing: tabRowSpacing,
+                                        selection: $selection,
+                                        selectedTabIds: $selectedTabIds,
+                                        lastSidebarSelectionIndex: $lastSidebarSelectionIndex,
+                                        dragAutoScrollController: dragAutoScrollController,
+                                        draggedTabId: $draggedTabId,
+                                        dropIndicator: $dropIndicator
+                                    )
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                }
+                                .frame(minHeight: max(0, proxy.size.height - trafficLightPadding - 36), alignment: .top)
+                            }
+                            .background(
+                                SidebarScrollViewResolver { scrollView in
+                                    dragAutoScrollController.attach(scrollView: scrollView)
+                                }
+                                .frame(width: 0, height: 0)
+                            )
+                        case .files:
+                            FileExplorerPanelView(store: fileExplorerStore, state: fileExplorerState)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                .accessibilityIdentifier("SidebarFilesActivity")
+                        case .git:
+                            ScrollView {
+                                SidebarGitStatusView(store: fileExplorerStore)
+                                    .padding(.horizontal, 10)
+                                    .padding(.top, 4)
+                                    .padding(.bottom, 12)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .modifier(ClearScrollBackground())
+                            .accessibilityIdentifier("SidebarGitActivity")
+                        case .notifications:
+                            SidebarActivityPlaceholder(
+                                systemImage: "bell",
+                                title: String(localized: "sidebar.activity.notifications.title", defaultValue: "Notifications"),
+                                detail: String(localized: "sidebar.activity.notifications.detail", defaultValue: "Notifications open in the main pane.")
+                            )
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
                     }
-                    .frame(minHeight: proxy.size.height, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .background(
-                    SidebarScrollViewResolver { scrollView in
-                        dragAutoScrollController.attach(scrollView: scrollView)
-                    }
-                    .frame(width: 0, height: 0)
-                )
                 .overlay(alignment: .top) {
                     SidebarTopScrim(height: trafficLightPadding + 20)
                         .allowsHitTesting(false)
@@ -10265,7 +10303,12 @@ struct VerticalTabsSidebar: View {
                 .background(Color.clear)
                 .modifier(ClearScrollBackground())
             }
-            SidebarFooter(updateViewModel: updateViewModel, fileExplorerState: fileExplorerState, onSendFeedback: onSendFeedback)
+            SidebarFooter(
+                updateViewModel: updateViewModel,
+                fileExplorerState: fileExplorerState,
+                onSendFeedback: onSendFeedback,
+                selection: $selection
+            )
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .accessibilityIdentifier("Sidebar")
@@ -10337,6 +10380,364 @@ struct VerticalTabsSidebar: View {
     private func debugShortSidebarTabId(_ id: UUID?) -> String {
         guard let id else { return "nil" }
         return String(id.uuidString.prefix(5))
+    }
+}
+
+private struct SidebarActivitySwitcher: View {
+    @Binding var selection: SidebarSelection
+    @ObservedObject var fileExplorerState: FileExplorerState
+    private let activities: [SidebarSelection] = [.tabs, .files, .git]
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(activities, id: \.self) { activity in
+                SidebarActivityButton(
+                    activity: activity,
+                    isSelected: selection == activity,
+                    action: {
+                        if activity == .files {
+                            fileExplorerState.isFeatureEnabled = true
+                            fileExplorerState.setVisible(false)
+                        }
+                        selection = activity
+                    }
+                )
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        )
+        .accessibilityIdentifier("SidebarActivitySwitcher")
+    }
+}
+
+private struct SidebarActivityButton: View {
+    let activity: SidebarSelection
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: activity.systemImage)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(activity.activityTitle)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            .foregroundStyle(foregroundColor)
+            .frame(maxWidth: .infinity, minHeight: 24)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(backgroundColor)
+            )
+        }
+        .buttonStyle(.plain)
+        .safeHelp(activity.activityHelp)
+        .accessibilityLabel(activity.activityHelp)
+        .accessibilityIdentifier("sidebarActivity.\(activity.rawValue)")
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+
+    private var foregroundColor: Color {
+        isSelected ? Color(nsColor: sidebarSelectedWorkspaceForegroundNSColor(opacity: 0.96)) : .secondary
+    }
+
+    private var backgroundColor: Color {
+        if isSelected {
+            return cmuxAccentColor()
+        }
+        return Color.primary.opacity(isHovered ? 0.08 : 0.0)
+    }
+}
+
+private struct SidebarActivityPlaceholder: View {
+    let systemImage: String
+    let title: String
+    let detail: String
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.primary)
+            Text(detail)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+        }
+        .padding(16)
+    }
+}
+
+private struct SidebarGitStatusView: View {
+    @ObservedObject var store: FileExplorerStore
+    @EnvironmentObject private var tabManager: TabManager
+
+    private var selectedWorkspace: Workspace? {
+        guard let selectedId = tabManager.selectedTabId else { return nil }
+        return tabManager.tabs.first { $0.id == selectedId }
+    }
+
+    private var statusCounts: SidebarGitStatusCounts {
+        SidebarGitStatusCounts(statuses: Array(store.gitStatusByPath.values))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let workspace = selectedWorkspace {
+                SidebarGitSectionHeader(
+                    title: workspace.title,
+                    subtitle: SidebarPathFormatter.shortenedPath(workspace.currentDirectory)
+                )
+
+                branchSection(workspace)
+                statusSection(workspace)
+                directoriesSection(workspace)
+                pullRequestsSection(workspace)
+            } else {
+                SidebarActivityPlaceholder(
+                    systemImage: "arrow.triangle.branch",
+                    title: String(localized: "sidebar.git.empty.title", defaultValue: "No Workspace"),
+                    detail: String(localized: "sidebar.git.empty.detail", defaultValue: "Select a workspace to inspect Git state.")
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func branchSection(_ workspace: Workspace) -> some View {
+        let branches = workspace.sidebarGitBranchesInDisplayOrder()
+        SidebarGitPanelSection(title: String(localized: "sidebar.git.branches", defaultValue: "Branches")) {
+            if branches.isEmpty {
+                SidebarGitMutedText(String(localized: "sidebar.git.noBranch", defaultValue: "No Git repository detected."))
+            } else {
+                ForEach(Array(branches.enumerated()), id: \.offset) { _, branch in
+                    HStack(spacing: 7) {
+                        Image(systemName: branch.isDirty ? "circle.fill" : "checkmark.circle.fill")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(branch.isDirty ? Color(nsColor: .systemOrange) : Color(nsColor: .systemGreen))
+                        Text(branch.branch)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 0)
+                        if branch.isDirty {
+                            Text(String(localized: "sidebar.git.dirty", defaultValue: "dirty"))
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(Color(nsColor: .systemOrange))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func statusSection(_ workspace: Workspace) -> some View {
+        SidebarGitPanelSection(title: String(localized: "sidebar.git.workingTree", defaultValue: "Working Tree")) {
+            if statusCounts.total == 0 {
+                let isDirty = workspace.sidebarGitBranchesInDisplayOrder().contains { $0.isDirty }
+                HStack(spacing: 7) {
+                    Image(systemName: isDirty ? "exclamationmark.circle.fill" : "checkmark.circle.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(isDirty ? Color(nsColor: .systemOrange) : Color(nsColor: .systemGreen))
+                    Text(isDirty
+                        ? String(localized: "sidebar.git.dirtyNoFiles", defaultValue: "Changes detected")
+                        : String(localized: "sidebar.git.clean", defaultValue: "Clean"))
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                }
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 72), spacing: 6)], alignment: .leading, spacing: 6) {
+                    SidebarGitStatusPill(label: String(localized: "sidebar.git.modified", defaultValue: "Modified"), count: statusCounts.modified, color: Color(nsColor: .systemOrange))
+                    SidebarGitStatusPill(label: String(localized: "sidebar.git.added", defaultValue: "Added"), count: statusCounts.added, color: Color(nsColor: .systemGreen))
+                    SidebarGitStatusPill(label: String(localized: "sidebar.git.deleted", defaultValue: "Deleted"), count: statusCounts.deleted, color: Color(nsColor: .systemRed))
+                    SidebarGitStatusPill(label: String(localized: "sidebar.git.renamed", defaultValue: "Renamed"), count: statusCounts.renamed, color: Color(nsColor: .systemTeal))
+                    SidebarGitStatusPill(label: String(localized: "sidebar.git.untracked", defaultValue: "Untracked"), count: statusCounts.untracked, color: Color(nsColor: .secondaryLabelColor))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func directoriesSection(_ workspace: Workspace) -> some View {
+        let directories = workspace.sidebarDirectoriesInDisplayOrder()
+        SidebarGitPanelSection(title: String(localized: "sidebar.git.directories", defaultValue: "Directories")) {
+            ForEach(directories, id: \.self) { directory in
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text(SidebarPathFormatter.shortenedPath(directory))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pullRequestsSection(_ workspace: Workspace) -> some View {
+        let pullRequests = workspace.sidebarPullRequestsInDisplayOrder()
+        if !pullRequests.isEmpty {
+            SidebarGitPanelSection(title: String(localized: "sidebar.git.pullRequests", defaultValue: "Pull Requests")) {
+                ForEach(Array(pullRequests.enumerated()), id: \.offset) { _, pullRequest in
+                    Link(destination: pullRequest.url) {
+                        HStack(spacing: 6) {
+                            Image(systemName: pullRequest.status.gitSidebarSystemImage)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(pullRequest.status.gitSidebarColor)
+                            Text("\(pullRequest.label) #\(pullRequest.number)")
+                                .font(.system(size: 11, weight: .semibold))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(pullRequest.isStale ? 0.55 : 1)
+                }
+            }
+        }
+    }
+}
+
+private struct SidebarGitSectionHeader: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text(subtitle)
+                .font(.system(size: 10.5, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .padding(.top, 2)
+    }
+}
+
+private struct SidebarGitPanelSection<Content: View>: View {
+    let title: String
+    let content: Content
+
+    init(title: String, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title.uppercased())
+                .font(.system(size: 9.5, weight: .bold))
+                .foregroundStyle(.secondary)
+            content
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SidebarGitMutedText: View {
+    let text: String
+
+    init(_ text: String) {
+        self.text = text
+    }
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .lineLimit(3)
+    }
+}
+
+private struct SidebarGitStatusPill: View {
+    let label: String
+    let count: Int
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(color)
+                .frame(width: 6, height: 6)
+            Text("\(count)")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+            Text(label)
+                .font(.system(size: 10, weight: .medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .foregroundStyle(count == 0 ? Color.secondary.opacity(0.55) : Color.primary)
+        .padding(.horizontal, 7)
+        .frame(height: 24)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.primary.opacity(count == 0 ? 0.035 : 0.07))
+        )
+    }
+}
+
+private struct SidebarGitStatusCounts {
+    var modified = 0
+    var added = 0
+    var deleted = 0
+    var renamed = 0
+    var untracked = 0
+
+    init(statuses: [GitFileStatus]) {
+        for status in statuses {
+            switch status {
+            case .modified: modified += 1
+            case .added: added += 1
+            case .deleted: deleted += 1
+            case .renamed: renamed += 1
+            case .untracked: untracked += 1
+            }
+        }
+    }
+
+    var total: Int {
+        modified + added + deleted + renamed + untracked
+    }
+}
+
+private extension SidebarPullRequestStatus {
+    var gitSidebarSystemImage: String {
+        switch self {
+        case .open: return "smallcircle.filled.circle"
+        case .merged: return "checkmark.circle.fill"
+        case .closed: return "xmark.circle.fill"
+        }
+    }
+
+    var gitSidebarColor: Color {
+        switch self {
+        case .open: return Color(nsColor: .systemGreen)
+        case .merged: return Color(nsColor: .systemTeal)
+        case .closed: return Color(nsColor: .systemRed)
+        }
     }
 }
 
@@ -11213,12 +11614,23 @@ private struct SidebarFooter: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     @ObservedObject var fileExplorerState: FileExplorerState
     let onSendFeedback: () -> Void
+    @Binding var selection: SidebarSelection
 
     var body: some View {
 #if DEBUG
-        SidebarDevFooter(updateViewModel: updateViewModel, fileExplorerState: fileExplorerState, onSendFeedback: onSendFeedback)
+        SidebarDevFooter(
+            updateViewModel: updateViewModel,
+            fileExplorerState: fileExplorerState,
+            onSendFeedback: onSendFeedback,
+            selection: $selection
+        )
 #else
-        SidebarFooterButtons(updateViewModel: updateViewModel, fileExplorerState: fileExplorerState, onSendFeedback: onSendFeedback)
+        SidebarFooterButtons(
+            updateViewModel: updateViewModel,
+            fileExplorerState: fileExplorerState,
+            onSendFeedback: onSendFeedback,
+            selection: $selection
+        )
             .padding(.leading, 6)
             .padding(.trailing, 10)
             .padding(.bottom, 6)
@@ -11230,26 +11642,23 @@ private struct SidebarFooterButtons: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     @ObservedObject var fileExplorerState: FileExplorerState
     let onSendFeedback: () -> Void
+    @Binding var selection: SidebarSelection
 
     var body: some View {
         HStack(spacing: 4) {
             SidebarHelpMenuButton(onSendFeedback: onSendFeedback)
 
             if fileExplorerState.isFeatureEnabled {
-                Button(action: { fileExplorerState.toggle() }) {
-                    Image(systemName: fileExplorerState.isVisible ? "folder.fill" : "folder")
+                Button(action: { selection = .files }) {
+                    Image(systemName: selection == .files ? "folder.fill" : "folder")
                         .font(.system(size: 12))
-                        .foregroundStyle(fileExplorerState.isVisible ? Color.accentColor : Color(nsColor: .secondaryLabelColor))
+                        .foregroundStyle(selection == .files ? cmuxAccentColor() : Color(nsColor: .secondaryLabelColor))
                 }
                 .buttonStyle(SidebarFooterIconButtonStyle())
                 .frame(width: 22, height: 22, alignment: .center)
-                .help(fileExplorerState.isVisible
-                    ? String(localized: "sidebar.fileExplorer.hide", defaultValue: "Hide File Explorer")
-                    : String(localized: "sidebar.fileExplorer.show", defaultValue: "Show File Explorer"))
-                .accessibilityLabel(fileExplorerState.isVisible
-                    ? String(localized: "sidebar.fileExplorer.hide", defaultValue: "Hide File Explorer")
-                    : String(localized: "sidebar.fileExplorer.show", defaultValue: "Show File Explorer"))
-                .accessibilityIdentifier("sidebarFooter.toggleFileExplorer")
+                .help(String(localized: "sidebar.fileExplorer.show", defaultValue: "Show File Explorer"))
+                .accessibilityLabel(String(localized: "sidebar.fileExplorer.show", defaultValue: "Show File Explorer"))
+                .accessibilityIdentifier("sidebarFooter.showFileExplorer")
             }
 
             UpdatePill(model: updateViewModel)
@@ -12372,12 +12781,18 @@ private struct SidebarDevFooter: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     @ObservedObject var fileExplorerState: FileExplorerState
     let onSendFeedback: () -> Void
+    @Binding var selection: SidebarSelection
     @AppStorage(DevBuildBannerDebugSettings.sidebarBannerVisibleKey)
     private var showSidebarDevBuildBanner = DevBuildBannerDebugSettings.defaultShowSidebarBanner
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SidebarFooterButtons(updateViewModel: updateViewModel, fileExplorerState: fileExplorerState, onSendFeedback: onSendFeedback)
+            SidebarFooterButtons(
+                updateViewModel: updateViewModel,
+                fileExplorerState: fileExplorerState,
+                onSendFeedback: onSendFeedback,
+                selection: $selection
+            )
             if showSidebarDevBuildBanner {
                 Text(String(localized: "debug.devBuildBanner.title", defaultValue: "THIS IS A DEV BUILD"))
                     .font(.system(size: 11, weight: .semibold))
@@ -15152,9 +15567,50 @@ private final class MiddleClickCaptureView: NSView {
     }
 }
 
-enum SidebarSelection {
+enum SidebarSelection: String, Hashable {
     case tabs
+    case files
+    case git
     case notifications
+
+    var activityTitle: String {
+        switch self {
+        case .tabs:
+            return String(localized: "sidebar.activity.workspaces", defaultValue: "Work")
+        case .files:
+            return String(localized: "sidebar.activity.files", defaultValue: "Files")
+        case .git:
+            return String(localized: "sidebar.activity.git", defaultValue: "Git")
+        case .notifications:
+            return String(localized: "sidebar.activity.notifications", defaultValue: "Alerts")
+        }
+    }
+
+    var activityHelp: String {
+        switch self {
+        case .tabs:
+            return String(localized: "sidebar.activity.workspaces.help", defaultValue: "Show Workspaces")
+        case .files:
+            return String(localized: "sidebar.activity.files.help", defaultValue: "Show Files")
+        case .git:
+            return String(localized: "sidebar.activity.git.help", defaultValue: "Show Git Status")
+        case .notifications:
+            return String(localized: "sidebar.activity.notifications.help", defaultValue: "Show Notifications")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .tabs:
+            return "rectangle.stack"
+        case .files:
+            return "folder"
+        case .git:
+            return "arrow.triangle.branch"
+        case .notifications:
+            return "bell"
+        }
+    }
 }
 
 private struct ClearScrollBackground: ViewModifier {

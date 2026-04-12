@@ -684,9 +684,9 @@ struct FileExplorerTitlebarButton: View {
                 .frame(width: config.buttonSize, height: config.buttonSize)
         }
         .accessibilityIdentifier("titlebarControl.toggleFileExplorer")
-        .accessibilityLabel(String(localized: "titlebar.fileExplorer.accessibilityLabel", defaultValue: "Toggle File Explorer"))
+        .accessibilityLabel(String(localized: "titlebar.fileExplorer.accessibilityLabel", defaultValue: "Show File Explorer"))
         .safeHelp(KeyboardShortcutSettings.Action.toggleFileExplorer.tooltip(
-            String(localized: "titlebar.fileExplorer.tooltip", defaultValue: "Show or hide the file explorer")
+            String(localized: "titlebar.fileExplorer.tooltip", defaultValue: "Show File Explorer")
         ))
     }
 }
@@ -816,4 +816,3 @@ final class FileExplorerTitlebarAccessoryViewController: NSTitlebarAccessoryView
         })
     }
 }
-

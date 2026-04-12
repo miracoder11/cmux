@@ -64,6 +64,9 @@ enum KeyboardShortcutSettings {
         case splitBrowserDown
 
         // File Explorer
+        case showWorkspacesSidebar
+        case showFilesSidebar
+        case showGitSidebar
         case toggleFileExplorer
 
         // Panels
@@ -128,7 +131,10 @@ enum KeyboardShortcutSettings {
             case .toggleSplitZoom: return String(localized: "shortcut.togglePaneZoom.label", defaultValue: "Toggle Pane Zoom")
             case .splitBrowserRight: return String(localized: "shortcut.splitBrowserRight.label", defaultValue: "Split Browser Right")
             case .splitBrowserDown: return String(localized: "shortcut.splitBrowserDown.label", defaultValue: "Split Browser Down")
-            case .toggleFileExplorer: return String(localized: "shortcut.toggleFileExplorer.label", defaultValue: "Toggle File Explorer")
+            case .showWorkspacesSidebar: return String(localized: "shortcut.showWorkspacesSidebar.label", defaultValue: "Show Workspaces")
+            case .showFilesSidebar: return String(localized: "shortcut.showFilesSidebar.label", defaultValue: "Show Files")
+            case .showGitSidebar: return String(localized: "shortcut.showGitSidebar.label", defaultValue: "Show Git")
+            case .toggleFileExplorer: return String(localized: "shortcut.toggleFileExplorer.label", defaultValue: "Show File Explorer")
             case .openBrowser: return String(localized: "shortcut.openBrowser.label", defaultValue: "Open Browser")
             case .focusBrowserAddressBar: return String(localized: "command.browserFocusAddressBar.title", defaultValue: "Focus Address Bar")
             case .browserBack: return String(localized: "menu.view.back", defaultValue: "Back")
@@ -236,6 +242,12 @@ enum KeyboardShortcutSettings {
                 return StoredShortcut(key: "m", command: true, shift: true, option: false, control: false)
             case .selectWorkspaceByNumber:
                 return StoredShortcut(key: "1", command: true, shift: false, option: false, control: false)
+            case .showWorkspacesSidebar:
+                return StoredShortcut(key: "1", command: true, shift: false, option: true, control: false)
+            case .showFilesSidebar:
+                return StoredShortcut(key: "2", command: true, shift: false, option: true, control: false)
+            case .showGitSidebar:
+                return StoredShortcut(key: "3", command: true, shift: false, option: true, control: false)
             case .toggleFileExplorer:
                 return StoredShortcut(key: "b", command: true, shift: false, option: true, control: false)
             case .openBrowser:

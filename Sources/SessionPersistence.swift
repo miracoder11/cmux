@@ -169,12 +169,18 @@ struct SessionDisplaySnapshot: Codable, Sendable {
 
 enum SessionSidebarSelection: String, Codable, Sendable, Equatable {
     case tabs
+    case files
+    case git
     case notifications
 
     init(selection: SidebarSelection) {
         switch selection {
         case .tabs:
             self = .tabs
+        case .files:
+            self = .files
+        case .git:
+            self = .git
         case .notifications:
             self = .notifications
         }
@@ -184,6 +190,10 @@ enum SessionSidebarSelection: String, Codable, Sendable, Equatable {
         switch self {
         case .tabs:
             return .tabs
+        case .files:
+            return .files
+        case .git:
+            return .git
         case .notifications:
             return .notifications
         }

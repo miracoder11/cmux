@@ -1391,7 +1391,7 @@ final class UpdateTitlebarAccessoryController {
         if FileExplorerFeatureSettings.isEnabled() {
             if !window.titlebarAccessoryViewControllers.contains(where: { $0.view.identifier == fileExplorerIdentifier }) {
                 let toggle = FileExplorerTitlebarAccessoryViewController(onToggle: {
-                    AppDelegate.shared?.fileExplorerState?.toggle()
+                    AppDelegate.shared?.selectSidebarActivity(.files)
                 })
                 toggle.layoutAttribute = .trailing
                 toggle.view.identifier = fileExplorerIdentifier

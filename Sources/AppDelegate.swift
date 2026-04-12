@@ -2223,6 +2223,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let tabManager: TabManager
         let sidebarState: SidebarState
         let sidebarSelectionState: SidebarSelectionState
+        let fileExplorerState: FileExplorerState
         weak var window: NSWindow?
 
         init(
@@ -2230,12 +2231,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             tabManager: TabManager,
             sidebarState: SidebarState,
             sidebarSelectionState: SidebarSelectionState,
+            fileExplorerState: FileExplorerState,
             window: NSWindow?
         ) {
             self.windowId = windowId
             self.tabManager = tabManager
             self.sidebarState = sidebarState
             self.sidebarSelectionState = sidebarSelectionState
+            self.fileExplorerState = fileExplorerState
             self.window = window
         }
     }
@@ -3020,10 +3023,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         _ = saveSessionSnapshot(includeScrollback: true, removeWhenEmpty: false)
     }
 
-    func configure(tabManager: TabManager, notificationStore: TerminalNotificationStore, sidebarState: SidebarState) {
+    func configure(
+        tabManager: TabManager,
+        notificationStore: TerminalNotificationStore,
+        sidebarState: SidebarState,
+        sidebarSelectionState: SidebarSelectionState? = nil,
+        fileExplorerState: FileExplorerState? = nil
+    ) {
         self.tabManager = tabManager
         self.notificationStore = notificationStore
         self.sidebarState = sidebarState
+        if let sidebarSelectionState {
+            self.sidebarSelectionState = sidebarSelectionState
+        }
+        if let fileExplorerState {
+            self.fileExplorerState = fileExplorerState
+        }
         disableSuddenTerminationIfNeeded()
         installLifecycleSnapshotObserversIfNeeded()
         prepareStartupSessionSnapshotIfNeeded()
@@ -4436,8 +4451,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             switch context.sidebarSelectionState.selection {
             case .tabs:
                 hasher.combine(0)
-            case .notifications:
+            case .files:
                 hasher.combine(1)
+            case .git:
+                hasher.combine(2)
+            case .notifications:
+                hasher.combine(3)
             }
 
             if let window = context.window ?? windowForMainWindowId(context.windowId) {
@@ -4809,7 +4828,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         windowId: UUID,
         tabManager: TabManager,
         sidebarState: SidebarState,
-        sidebarSelectionState: SidebarSelectionState
+        sidebarSelectionState: SidebarSelectionState,
+        fileExplorerState: FileExplorerState
     ) {
         tabManager.window = window
 
@@ -4828,6 +4848,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 tabManager: tabManager,
                 sidebarState: sidebarState,
                 sidebarSelectionState: sidebarSelectionState,
+                fileExplorerState: fileExplorerState,
                 window: window
             )
             NotificationCenter.default.addObserver(
@@ -6178,11 +6199,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 tabManager = nextContext.tabManager
                 sidebarState = nextContext.sidebarState
                 sidebarSelectionState = nextContext.sidebarSelectionState
+                fileExplorerState = nextContext.fileExplorerState
                 TerminalController.shared.setActiveTabManager(nextContext.tabManager)
             } else {
                 tabManager = nil
                 sidebarState = nil
                 sidebarSelectionState = nil
+                fileExplorerState = nil
                 TerminalController.shared.setActiveTabManager(nil)
             }
         }
@@ -6406,6 +6429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             tabManager === context.tabManager
             && sidebarState === context.sidebarState
             && sidebarSelectionState === context.sidebarSelectionState
+            && fileExplorerState === context.fileExplorerState
         if alreadyActive {
 #if DEBUG
             dlog(
@@ -6420,6 +6444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             tabManager = context.tabManager
             sidebarState = context.sidebarState
             sidebarSelectionState = context.sidebarSelectionState
+            fileExplorerState = context.fileExplorerState
             TerminalController.shared.setActiveTabManager(context.tabManager)
         }
 #if DEBUG
@@ -6538,6 +6563,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
         return false
+    }
+
+    @discardableResult
+    func selectSidebarActivity(_ selection: SidebarSelection, event: NSEvent? = nil) -> Bool {
+        let context: MainWindowContext? = {
+            if let event {
+                return preferredMainWindowContextForShortcuts(event: event)
+            }
+            if let activeManager = tabManager,
+               let activeContext = mainWindowContexts.values.first(where: { $0.tabManager === activeManager }) {
+                return activeContext
+            }
+            if let keyContext = contextForMainWindow(NSApp.keyWindow) {
+                return keyContext
+            }
+            if let mainContext = contextForMainWindow(NSApp.mainWindow) {
+                return mainContext
+            }
+            return mainWindowContexts.values.first
+        }()
+
+        guard let context else {
+            sidebarState?.isVisible = true
+            sidebarSelectionState?.selection = selection
+            if selection == .files {
+                fileExplorerState?.isFeatureEnabled = true
+                fileExplorerState?.setVisible(false)
+            }
+            return sidebarSelectionState != nil
+        }
+
+        if let window = context.window ?? windowForMainWindowId(context.windowId) {
+            setActiveMainWindow(window)
+        } else {
+            tabManager = context.tabManager
+            sidebarState = context.sidebarState
+            sidebarSelectionState = context.sidebarSelectionState
+            fileExplorerState = context.fileExplorerState
+            TerminalController.shared.setActiveTabManager(context.tabManager)
+        }
+
+        context.sidebarState.isVisible = true
+        context.sidebarSelectionState.selection = selection
+        if selection == .files {
+            context.fileExplorerState.isFeatureEnabled = true
+            context.fileExplorerState.setVisible(false)
+        }
+        return true
     }
 
     func sidebarVisibility(windowId: UUID) -> Bool? {
@@ -7055,6 +7128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             tabManager === context.tabManager
             && sidebarState === context.sidebarState
             && sidebarSelectionState === context.sidebarSelectionState
+            && fileExplorerState === context.fileExplorerState
         if alreadyActive { return true }
 
         if let window = context.window ?? windowForMainWindowId(context.windowId) {
@@ -7063,6 +7137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             tabManager = context.tabManager
             sidebarState = context.sidebarState
             sidebarSelectionState = context.sidebarSelectionState
+            fileExplorerState = context.fileExplorerState
             TerminalController.shared.setActiveTabManager(context.tabManager)
         }
 
@@ -7189,7 +7264,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             windowId: windowId,
             tabManager: tabManager,
             sidebarState: sidebarState,
-            sidebarSelectionState: sidebarSelectionState
+            sidebarSelectionState: sidebarSelectionState,
+            fileExplorerState: fileExplorerState
         )
         installFileDropOverlay(on: window, tabManager: tabManager)
         if TerminalController.shouldSuppressSocketCommandActivation() {
@@ -10162,6 +10238,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let sidebarSelectionString: String = {
             switch sidebarSelection {
             case .tabs: return "tabs"
+            case .files: return "files"
+            case .git: return "git"
             case .notifications: return "notifications"
             }
         }()
@@ -11069,14 +11147,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             return true
         }
 
-        if FileExplorerFeatureSettings.isEnabled(),
-           matchConfiguredShortcut(event: event, action: .toggleFileExplorer) {
-            // Dispatch async to escape AppKit's performKeyEquivalent animation context.
-            // Without this, NSAnimationContext implicitly animates the layout change.
-            DispatchQueue.main.async { [weak self] in
-                self?.fileExplorerState?.toggle()
-            }
-            return true
+        if matchConfiguredShortcut(event: event, action: .showWorkspacesSidebar) {
+            return selectSidebarActivity(.tabs, event: event)
+        }
+
+        if matchConfiguredShortcut(event: event, action: .showFilesSidebar) {
+            return selectSidebarActivity(.files, event: event)
+        }
+
+        if matchConfiguredShortcut(event: event, action: .showGitSidebar) {
+            return selectSidebarActivity(.git, event: event)
+        }
+
+        if matchConfiguredShortcut(event: event, action: .toggleFileExplorer) {
+            return selectSidebarActivity(.files, event: event)
         }
 
         if matchConfiguredShortcut(event: event, action: .sendFeedback) {
@@ -12923,6 +13007,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         tabManager = context.tabManager
         sidebarState = context.sidebarState
         sidebarSelectionState = context.sidebarSelectionState
+        fileExplorerState = context.fileExplorerState
         TerminalController.shared.setActiveTabManager(context.tabManager)
 #if DEBUG
         dlog(
@@ -12970,11 +13055,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 tabManager = nextContext.tabManager
                 sidebarState = nextContext.sidebarState
                 sidebarSelectionState = nextContext.sidebarSelectionState
+                fileExplorerState = nextContext.fileExplorerState
                 TerminalController.shared.setActiveTabManager(nextContext.tabManager)
             } else {
                 tabManager = nil
                 sidebarState = nil
                 sidebarSelectionState = nil
+                fileExplorerState = nil
                 TerminalController.shared.setActiveTabManager(nil)
             }
         }

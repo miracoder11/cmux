@@ -89,7 +89,7 @@ enum WorkspaceButtonFadeSettings {
 
 enum FileExplorerFeatureSettings {
     static let enabledKey = "fileExplorer.featureEnabled"
-    static let defaultEnabled = false
+    static let defaultEnabled = true
 
     static func isEnabled(defaults: UserDefaults = .standard) -> Bool {
         defaults.object(forKey: enabledKey) as? Bool ?? defaultEnabled
@@ -205,7 +205,13 @@ struct cmuxApp: App {
 
         // UI tests depend on AppDelegate wiring happening even if SwiftUI view appearance
         // callbacks (e.g. `.onAppear`) are delayed or skipped.
-        appDelegate.configure(tabManager: tabManager, notificationStore: notificationStore, sidebarState: sidebarState)
+        appDelegate.configure(
+            tabManager: tabManager,
+            notificationStore: notificationStore,
+            sidebarState: sidebarState,
+            sidebarSelectionState: sidebarSelectionState,
+            fileExplorerState: fileExplorerState
+        )
     }
 
     private static func terminateForMissingLaunchTag() -> Never {
@@ -343,8 +349,13 @@ struct cmuxApp: App {
 #endif
                     // Start the Unix socket controller for programmatic access
                     updateSocketController()
-                    appDelegate.configure(tabManager: tabManager, notificationStore: notificationStore, sidebarState: sidebarState)
-                    appDelegate.fileExplorerState = fileExplorerState
+                    appDelegate.configure(
+                        tabManager: tabManager,
+                        notificationStore: notificationStore,
+                        sidebarState: sidebarState,
+                        sidebarSelectionState: sidebarSelectionState,
+                        fileExplorerState: fileExplorerState
+                    )
                     cmuxConfigStore.wireDirectoryTracking(tabManager: tabManager)
                     cmuxConfigStore.loadAll()
                     applyAppearance()
@@ -4363,7 +4374,7 @@ struct SettingsView: View {
         SettingsCardRow(
             configurationReview: .settingsOnly,
             String(localized: "settings.app.fileExplorer", defaultValue: "File Explorer"),
-            subtitle: String(localized: "settings.app.fileExplorer.subtitle", defaultValue: "Show a file explorer panel on the right side of the terminal (Cmd+Option+B).")
+            subtitle: String(localized: "settings.app.fileExplorer.subtitle", defaultValue: "Show the Files sidebar activity (Cmd+Option+B).")
         ) {
             Toggle("", isOn: Binding(
                 get: { fileExplorerFeatureEnabled },
