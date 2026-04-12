@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Sidebar Files and Git
-status: In progress
-last_updated: "2026-04-12T13:05:27Z"
+status: Complete
+last_updated: "2026-04-12T13:28:54Z"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -16,8 +16,8 @@ progress:
 ## Current Status
 
 - **Phase**: 04-visual-refresh-and-validation
-- **Status**: Implementation complete; CI verification pending on latest push
-- **Last Updated**: 2026-04-12T13:05:27Z
+- **Status**: Complete; CI build, smoke launch, and screenshot verification passed
+- **Last Updated**: 2026-04-12T13:28:54Z
 
 ## Completed
 
@@ -28,6 +28,7 @@ progress:
 - Git activity summarizes branch/dirty state, directories, pull requests, and file status counts.
 - Sidebar activity shortcuts are registered for Workspaces, Files, and Git.
 - Default file explorer flag is on, and the accent color has moved away from the harsh blue.
+- Fork Build Verify run `24307730233` passed on head `b99f59e300821018ddf05d6184b6e349a9098195`.
 
 ## Decisions
 
@@ -36,6 +37,6 @@ progress:
 - Keep the file explorer core but move product integration toward left-sidebar activity sections.
 - Preserve the upstream right-side file explorer panel for now, but route the old file explorer shortcut and titlebar button into the new left Files activity.
 
-## Blockers
+## Local Caveat
 
 - Local machine has no full Xcode, so local app build is intentionally unavailable.
