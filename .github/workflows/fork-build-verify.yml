@@ -1,0 +1,44 @@
+name: Fork Build Verify
+
+on:
+  push:
+    branches:
+      - main
+      - "try-*"
+      - "build/**"
+      - "feature/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Debug app
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      CMUX_SKIP_ZIG_BUILD: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - name: Build
+        run: ./scripts/fork-build-verify.sh
+
+      - name: Package app artifact
+        run: |
+          set -euo pipefail
+          APP_PATH=".build/xcode-derived/Build/Products/Debug/cmux.app"
+          test -d "$APP_PATH"
+          mkdir -p .build/artifacts
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" .build/artifacts/cmux-debug-app.zip
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cmux-debug-app
+          path: .build/artifacts/cmux-debug-app.zip
+          if-no-files-found: error
