@@ -28,6 +28,40 @@ jobs:
       - name: Build
         run: ./scripts/fork-build-verify.sh
 
+      - name: Create virtual display
+        run: |
+          set -euo pipefail
+          clang -framework Foundation -framework CoreGraphics \
+            -o /tmp/create-virtual-display scripts/create-virtual-display.m
+          /tmp/create-virtual-display --ready-path /tmp/cmux-display-ready &
+          echo "VDISPLAY_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 60); do
+            [ -f /tmp/cmux-display-ready ] && exit 0
+            sleep 0.5
+          done
+          echo "Virtual display did not become ready" >&2
+          exit 1
+
+      - name: Smoke launch
+        run: |
+          set -euo pipefail
+          APP_PATH="$(
+            find .build/xcode-derived/Build/Products/Debug -maxdepth 1 -name '*.app' -type d \
+              | sort \
+              | head -n 1
+          )"
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "No app bundle found to smoke test" >&2
+            exit 1
+          fi
+          mkdir -p .build/artifacts
+          CMUX_SMOKE_APP_PATH="$APP_PATH" \
+            CMUX_SMOKE_STABILITY_WAIT=5 \
+            CMUX_SMOKE_SCREENSHOT_PATH=".build/artifacts/cmux-smoke.png" \
+            ./scripts/smoke-test-ci.sh
+          cp /tmp/cmux-smoke-stdout.log .build/artifacts/cmux-smoke-stdout.log 2>/dev/null || true
+          cp /tmp/cmux-debug.log .build/artifacts/cmux-debug.log 2>/dev/null || true
+
       - name: Package app artifact
         run: |
           set -euo pipefail
@@ -49,3 +83,13 @@ jobs:
           name: cmux-debug-app
           path: .build/artifacts/cmux-debug-app.zip
           if-no-files-found: error
+
+      - name: Upload smoke artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cmux-smoke-artifacts
+          path: |
+            .build/artifacts/cmux-smoke.png
+            .build/artifacts/cmux-smoke-stdout.log
+            .build/artifacts/cmux-debug.log
+          if-no-files-found: warn

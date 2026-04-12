@@ -2,13 +2,16 @@
 # Smoke test for CI: launch the app, send a command, verify it stays alive for 15 seconds.
 set -euo pipefail
 
-SOCKET_PATH="/tmp/cmux-debug.sock"
-STABILITY_WAIT=15
+SOCKET_PATH="${CMUX_SMOKE_SOCKET_PATH:-/tmp/cmux-debug.sock}"
+STABILITY_WAIT="${CMUX_SMOKE_STABILITY_WAIT:-15}"
 
 echo "=== Smoke Test ==="
 
 # --- Find the built app ---
-APP=$(find ~/Library/Developer/Xcode/DerivedData -path "*/Build/Products/Debug/cmux DEV.app" -print -quit 2>/dev/null || true)
+APP="${CMUX_SMOKE_APP_PATH:-}"
+if [ -z "$APP" ]; then
+  APP=$(find ~/Library/Developer/Xcode/DerivedData -path "*/Build/Products/Debug/cmux DEV.app" -print -quit 2>/dev/null || true)
+fi
 if [ -z "$APP" ]; then
   echo "ERROR: Built app not found in DerivedData"
   exit 1
@@ -135,6 +138,16 @@ echo "Final ping: $FINAL_PING"
 if [ "$FINAL_PING" != "PONG" ]; then
   echo "ERROR: App not responsive after ${STABILITY_WAIT}s"
   exit 1
+fi
+
+SCREENSHOT_PATH="${CMUX_SMOKE_SCREENSHOT_PATH:-}"
+if [ -n "$SCREENSHOT_PATH" ]; then
+  mkdir -p "$(dirname "$SCREENSHOT_PATH")"
+  if screencapture -x "$SCREENSHOT_PATH"; then
+    echo "Screenshot: $SCREENSHOT_PATH"
+  else
+    echo "WARNING: Failed to capture screenshot at $SCREENSHOT_PATH"
+  fi
 fi
 
 echo "=== Smoke test passed ==="
