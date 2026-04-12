@@ -71,7 +71,19 @@ CMUX_SKIP_ZIG_BUILD="${CMUX_SKIP_ZIG_BUILD:-1}" xcodebuild \
   CODE_SIGNING_ALLOWED=NO \
   build
 
-APP_PATH="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION/cmux.app"
-test -d "$APP_PATH"
+PRODUCTS_DIR="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION"
+APP_PATH="${CMUX_BUILT_APP_PATH:-}"
+if [[ -z "$APP_PATH" ]]; then
+  APP_PATH="$(
+    find "$PRODUCTS_DIR" -maxdepth 1 -name '*.app' -type d 2>/dev/null \
+      | sort \
+      | head -n 1
+  )"
+fi
+
+if [[ -z "$APP_PATH" || ! -d "$APP_PATH" ]]; then
+  echo "Build completed, but no app bundle was found under $PRODUCTS_DIR" >&2
+  exit 1
+fi
 
 echo "Build verified: $APP_PATH"

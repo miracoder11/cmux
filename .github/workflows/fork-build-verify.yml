@@ -31,8 +31,15 @@ jobs:
       - name: Package app artifact
         run: |
           set -euo pipefail
-          APP_PATH=".build/xcode-derived/Build/Products/Debug/cmux.app"
-          test -d "$APP_PATH"
+          APP_PATH="$(
+            find .build/xcode-derived/Build/Products/Debug -maxdepth 1 -name '*.app' -type d \
+              | sort \
+              | head -n 1
+          )"
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "No app bundle found to package" >&2
+            exit 1
+          fi
           mkdir -p .build/artifacts
           ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" .build/artifacts/cmux-debug-app.zip
 
