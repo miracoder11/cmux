@@ -684,9 +684,9 @@ struct FileExplorerTitlebarButton: View {
                 .frame(width: config.buttonSize, height: config.buttonSize)
         }
         .accessibilityIdentifier("titlebarControl.toggleFileExplorer")
-        .accessibilityLabel(String(localized: "titlebar.fileExplorer.accessibilityLabel", defaultValue: "Show File Explorer"))
+        .accessibilityLabel(String(localized: "titlebar.fileExplorer.toggle.accessibilityLabel", defaultValue: "Toggle File Explorer"))
         .safeHelp(KeyboardShortcutSettings.Action.toggleFileExplorer.tooltip(
-            String(localized: "titlebar.fileExplorer.tooltip", defaultValue: "Show File Explorer")
+            String(localized: "titlebar.fileExplorer.toggle.tooltip", defaultValue: "Toggle File Explorer")
         ))
     }
 }

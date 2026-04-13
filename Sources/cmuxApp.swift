@@ -702,6 +702,44 @@ struct cmuxApp: App {
 
                 Divider()
 
+                splitCommandButton(title: String(localized: "menu.view.showWorkspacesSidebar", defaultValue: "Show Workspaces"), shortcut: menuShortcut(for: .showWorkspacesSidebar)) {
+                    if AppDelegate.shared?.selectSidebarActivity(.tabs) != true {
+                        sidebarState.isVisible = true
+                        sidebarSelectionState.selection = .tabs
+                    }
+                }
+
+                splitCommandButton(title: String(localized: "menu.view.showFilesSidebar", defaultValue: "Show Files"), shortcut: menuShortcut(for: .showFilesSidebar)) {
+                    if AppDelegate.shared?.selectSidebarActivity(.files) != true {
+                        sidebarState.isVisible = true
+                        fileExplorerState.isFeatureEnabled = true
+                        fileExplorerState.setVisible(false)
+                        sidebarSelectionState.selection = .files
+                    }
+                }
+
+                splitCommandButton(title: String(localized: "menu.view.showGitSidebar", defaultValue: "Show Git"), shortcut: menuShortcut(for: .showGitSidebar)) {
+                    if AppDelegate.shared?.selectSidebarActivity(.git) != true {
+                        sidebarState.isVisible = true
+                        sidebarSelectionState.selection = .git
+                    }
+                }
+
+                splitCommandButton(title: String(localized: "menu.view.toggleFileExplorer", defaultValue: "Toggle File Explorer"), shortcut: menuShortcut(for: .toggleFileExplorer)) {
+                    if AppDelegate.shared?.toggleSidebarActivity(.files) != true {
+                        sidebarState.isVisible = true
+                        if sidebarSelectionState.selection == .files {
+                            sidebarSelectionState.selection = .tabs
+                        } else {
+                            fileExplorerState.isFeatureEnabled = true
+                            fileExplorerState.setVisible(false)
+                            sidebarSelectionState.selection = .files
+                        }
+                    }
+                }
+
+                Divider()
+
                 splitCommandButton(title: String(localized: "menu.view.nextSurface", defaultValue: "Next Surface"), shortcut: menuShortcut(for: .nextSurface)) {
                     activeTabManager.selectNextSurface()
                 }

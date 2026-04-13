@@ -3247,7 +3247,7 @@ struct ContentView: View {
         })
 
         view = AnyView(view.onReceive(NotificationCenter.default.publisher(for: .ghosttyDidFocusTab)) { _ in
-            sidebarSelectionState.selection = .tabs
+            sidebarSelectionState.selection = sidebarSelectionAfterGhosttyFocus(sidebarSelectionState.selection)
             scheduleTitlebarTextRefresh()
         })
 
@@ -10386,14 +10386,17 @@ struct VerticalTabsSidebar: View {
 private struct SidebarActivitySwitcher: View {
     @Binding var selection: SidebarSelection
     @ObservedObject var fileExplorerState: FileExplorerState
+    @ObservedObject private var keyboardShortcutSettingsObserver = KeyboardShortcutSettingsObserver.shared
     private let activities: [SidebarSelection] = [.tabs, .files, .git]
 
     var body: some View {
+        let _ = keyboardShortcutSettingsObserver.revision
         HStack(spacing: 4) {
             ForEach(activities, id: \.self) { activity in
                 SidebarActivityButton(
                     activity: activity,
                     isSelected: selection == activity,
+                    shortcut: activity.shortcutAction.map { KeyboardShortcutSettings.shortcut(for: $0).displayString },
                     action: {
                         if activity == .files {
                             fileExplorerState.isFeatureEnabled = true
@@ -10416,21 +10419,31 @@ private struct SidebarActivitySwitcher: View {
 private struct SidebarActivityButton: View {
     let activity: SidebarSelection
     let isSelected: Bool
+    let shortcut: String?
     let action: () -> Void
     @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 5) {
-                Image(systemName: activity.systemImage)
-                    .font(.system(size: 11, weight: .semibold))
-                Text(activity.activityTitle)
-                    .font(.system(size: 10.5, weight: .semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+            VStack(spacing: 1) {
+                HStack(spacing: 5) {
+                    Image(systemName: activity.systemImage)
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(activity.activityTitle)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                if let shortcut {
+                    Text(shortcut)
+                        .font(.system(size: 8.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(shortcutColor)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
+                }
             }
             .foregroundStyle(foregroundColor)
-            .frame(maxWidth: .infinity, minHeight: 24)
+            .frame(maxWidth: .infinity, minHeight: shortcut == nil ? 24 : 32)
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
@@ -10438,12 +10451,21 @@ private struct SidebarActivityButton: View {
             )
         }
         .buttonStyle(.plain)
-        .safeHelp(activity.activityHelp)
-        .accessibilityLabel(activity.activityHelp)
+        .safeHelp(helpText)
+        .accessibilityLabel(helpText)
         .accessibilityIdentifier("sidebarActivity.\(activity.rawValue)")
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+
+    private var helpText: String {
+        guard let shortcut else { return activity.activityHelp }
+        return "\(activity.activityHelp) (\(shortcut))"
+    }
+
+    private var shortcutColor: Color {
+        isSelected ? Color(nsColor: sidebarSelectedWorkspaceForegroundNSColor(opacity: 0.72)) : Color(nsColor: .tertiaryLabelColor)
     }
 
     private var foregroundColor: Color {
@@ -11656,8 +11678,8 @@ private struct SidebarFooterButtons: View {
                 }
                 .buttonStyle(SidebarFooterIconButtonStyle())
                 .frame(width: 22, height: 22, alignment: .center)
-                .help(String(localized: "sidebar.fileExplorer.show", defaultValue: "Show File Explorer"))
-                .accessibilityLabel(String(localized: "sidebar.fileExplorer.show", defaultValue: "Show File Explorer"))
+                .help(String(localized: "sidebar.fileExplorer.showFiles", defaultValue: "Show Files"))
+                .accessibilityLabel(String(localized: "sidebar.fileExplorer.showFiles", defaultValue: "Show Files"))
                 .accessibilityIdentifier("sidebarFooter.showFileExplorer")
             }
 
@@ -15573,6 +15595,19 @@ enum SidebarSelection: String, Hashable {
     case git
     case notifications
 
+    var shortcutAction: KeyboardShortcutSettings.Action? {
+        switch self {
+        case .tabs:
+            return .showWorkspacesSidebar
+        case .files:
+            return .showFilesSidebar
+        case .git:
+            return .showGitSidebar
+        case .notifications:
+            return nil
+        }
+    }
+
     var activityTitle: String {
         switch self {
         case .tabs:
@@ -15610,6 +15645,15 @@ enum SidebarSelection: String, Hashable {
         case .notifications:
             return "bell"
         }
+    }
+}
+
+func sidebarSelectionAfterGhosttyFocus(_ selection: SidebarSelection) -> SidebarSelection {
+    switch selection {
+    case .notifications:
+        return .tabs
+    case .tabs, .files, .git:
+        return selection
     }
 }
 

@@ -904,6 +904,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         let orphanManager = TabManager()
         let orphanSidebarState = SidebarState()
         let orphanSidebarSelectionState = SidebarSelectionState()
+        let orphanFileExplorerState = FileExplorerState()
 
         autoreleasepool {
             var orphanWindow: NSWindow? = NSWindow(
@@ -918,7 +919,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
                 windowId: orphanWindowId,
                 tabManager: orphanManager,
                 sidebarState: orphanSidebarState,
-                sidebarSelectionState: orphanSidebarSelectionState
+                sidebarSelectionState: orphanSidebarSelectionState,
+                fileExplorerState: orphanFileExplorerState
             )
             orphanWindow = nil
         }
@@ -947,6 +949,7 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         let orphanManager = TabManager()
         let orphanSidebarState = SidebarState()
         let orphanSidebarSelectionState = SidebarSelectionState()
+        let orphanFileExplorerState = FileExplorerState()
 
         autoreleasepool {
             var orphanWindow: NSWindow? = NSWindow(
@@ -961,7 +964,8 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
                 windowId: orphanWindowId,
                 tabManager: orphanManager,
                 sidebarState: orphanSidebarState,
-                sidebarSelectionState: orphanSidebarSelectionState
+                sidebarSelectionState: orphanSidebarSelectionState,
+                fileExplorerState: orphanFileExplorerState
             )
             orphanWindow = nil
         }
@@ -999,6 +1003,85 @@ final class AppDelegateShortcutRoutingTests: XCTestCase {
         for windowId in createdWindowIds {
             closeWindow(withId: windowId)
         }
+    }
+
+    func testShowFilesSidebarShortcutSwitchesActivityAndShowsSidebar() {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+
+        let windowId = appDelegate.createMainWindow()
+        defer { closeWindow(withId: windowId) }
+
+        guard let window = window(withId: windowId) else {
+            XCTFail("Expected test window")
+            return
+        }
+
+        _ = appDelegate.selectSidebarActivity(.tabs)
+
+        withTemporaryShortcut(action: .showFilesSidebar) {
+            guard let event = makeKeyDownEvent(
+                key: "2",
+                modifiers: [.command, .option],
+                keyCode: 19,
+                windowNumber: window.windowNumber
+            ) else {
+                XCTFail("Failed to construct Cmd+Option+2 event")
+                return
+            }
+
+#if DEBUG
+            XCTAssertTrue(appDelegate.debugHandleCustomShortcut(event: event))
+#else
+            XCTFail("debugHandleCustomShortcut is only available in DEBUG")
+#endif
+        }
+
+        XCTAssertEqual(appDelegate.sidebarSelectionState?.selection, .files)
+        XCTAssertEqual(appDelegate.sidebarVisibility(windowId: windowId), true)
+        XCTAssertTrue(appDelegate.fileExplorerState?.isFeatureEnabled == true)
+        XCTAssertTrue(appDelegate.fileExplorerState?.isVisible == false)
+    }
+
+    func testToggleFileExplorerShortcutReturnsFromFilesToWorkspaces() {
+        guard let appDelegate = AppDelegate.shared else {
+            XCTFail("Expected AppDelegate.shared")
+            return
+        }
+
+        let windowId = appDelegate.createMainWindow()
+        defer { closeWindow(withId: windowId) }
+
+        guard let window = window(withId: windowId) else {
+            XCTFail("Expected test window")
+            return
+        }
+
+        _ = appDelegate.selectSidebarActivity(.files)
+        XCTAssertEqual(appDelegate.sidebarSelectionState?.selection, .files)
+
+        withTemporaryShortcut(action: .toggleFileExplorer) {
+            guard let event = makeKeyDownEvent(
+                key: "b",
+                modifiers: [.command, .option],
+                keyCode: 11,
+                windowNumber: window.windowNumber
+            ) else {
+                XCTFail("Failed to construct Cmd+Option+B event")
+                return
+            }
+
+#if DEBUG
+            XCTAssertTrue(appDelegate.debugHandleCustomShortcut(event: event))
+#else
+            XCTFail("debugHandleCustomShortcut is only available in DEBUG")
+#endif
+        }
+
+        XCTAssertEqual(appDelegate.sidebarSelectionState?.selection, .tabs)
+        XCTAssertEqual(appDelegate.sidebarVisibility(windowId: windowId), true)
     }
 
     func testCmdDigitRoutesToEventWindowWhenActiveManagerIsStale() {

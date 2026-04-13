@@ -6567,22 +6567,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     @discardableResult
     func selectSidebarActivity(_ selection: SidebarSelection, event: NSEvent? = nil) -> Bool {
-        let context: MainWindowContext? = {
-            if let event {
-                return preferredMainWindowContextForShortcuts(event: event)
-            }
-            if let activeManager = tabManager,
-               let activeContext = mainWindowContexts.values.first(where: { $0.tabManager === activeManager }) {
-                return activeContext
-            }
-            if let keyContext = contextForMainWindow(NSApp.keyWindow) {
-                return keyContext
-            }
-            if let mainContext = contextForMainWindow(NSApp.mainWindow) {
-                return mainContext
-            }
-            return mainWindowContexts.values.first
-        }()
+        let context = sidebarActivityContext(event: event)
 
         guard let context else {
             sidebarState?.isVisible = true
@@ -6611,6 +6596,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             context.fileExplorerState.setVisible(false)
         }
         return true
+    }
+
+    @discardableResult
+    func toggleSidebarActivity(_ selection: SidebarSelection, event: NSEvent? = nil) -> Bool {
+        let context = sidebarActivityContext(event: event)
+        let targetSelection: SidebarSelection = {
+            if let context,
+               context.sidebarState.isVisible,
+               context.sidebarSelectionState.selection == selection {
+                return .tabs
+            }
+            if context == nil,
+               sidebarState?.isVisible == true,
+               sidebarSelectionState?.selection == selection {
+                return .tabs
+            }
+            return selection
+        }()
+        return selectSidebarActivity(targetSelection, event: event)
+    }
+
+    private func sidebarActivityContext(event: NSEvent?) -> MainWindowContext? {
+        if let event {
+            return preferredMainWindowContextForShortcuts(event: event)
+        }
+        if let activeManager = tabManager,
+           let activeContext = mainWindowContexts.values.first(where: { $0.tabManager === activeManager }) {
+            return activeContext
+        }
+        if let keyContext = contextForMainWindow(NSApp.keyWindow) {
+            return keyContext
+        }
+        if let mainContext = contextForMainWindow(NSApp.mainWindow) {
+            return mainContext
+        }
+        return mainWindowContexts.values.first
     }
 
     func sidebarVisibility(windowId: UUID) -> Bool? {
@@ -11160,7 +11181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         if matchConfiguredShortcut(event: event, action: .toggleFileExplorer) {
-            return selectSidebarActivity(.files, event: event)
+            return toggleSidebarActivity(.files, event: event)
         }
 
         if matchConfiguredShortcut(event: event, action: .sendFeedback) {

@@ -134,7 +134,7 @@ enum KeyboardShortcutSettings {
             case .showWorkspacesSidebar: return String(localized: "shortcut.showWorkspacesSidebar.label", defaultValue: "Show Workspaces")
             case .showFilesSidebar: return String(localized: "shortcut.showFilesSidebar.label", defaultValue: "Show Files")
             case .showGitSidebar: return String(localized: "shortcut.showGitSidebar.label", defaultValue: "Show Git")
-            case .toggleFileExplorer: return String(localized: "shortcut.toggleFileExplorer.label", defaultValue: "Show File Explorer")
+            case .toggleFileExplorer: return String(localized: "shortcut.toggleFileExplorer.label", defaultValue: "Toggle File Explorer")
             case .openBrowser: return String(localized: "shortcut.openBrowser.label", defaultValue: "Open Browser")
             case .focusBrowserAddressBar: return String(localized: "command.browserFocusAddressBar.title", defaultValue: "Focus Address Bar")
             case .browserBack: return String(localized: "menu.view.back", defaultValue: "Back")

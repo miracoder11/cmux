@@ -321,6 +321,18 @@ final class WorkspaceRenameShortcutDefaultsTests: XCTestCase {
     }
 }
 
+final class SidebarActivityFocusPolicyTests: XCTestCase {
+    func testTerminalFocusPreservesSidebarActivityPanels() {
+        XCTAssertEqual(sidebarSelectionAfterGhosttyFocus(.tabs), .tabs)
+        XCTAssertEqual(sidebarSelectionAfterGhosttyFocus(.files), .files)
+        XCTAssertEqual(sidebarSelectionAfterGhosttyFocus(.git), .git)
+    }
+
+    func testTerminalFocusLeavesNotificationsOverlayForWorkspaces() {
+        XCTAssertEqual(sidebarSelectionAfterGhosttyFocus(.notifications), .tabs)
+    }
+}
+
 final class KeyboardShortcutSettingsFileStoreTests: XCTestCase {
     private var originalSettingsFileStore: KeyboardShortcutSettingsFileStore!
     private let settingsFileBackupsDefaultsKey = "cmux.settingsFile.backups.v1"
