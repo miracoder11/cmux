@@ -191,4 +191,24 @@ final class TitlebarControlsHoverPolicyTests: XCTestCase {
         XCTAssertTrue(titlebarControlsShouldTrackButtonHover(config: TitlebarControlsStyle.pillGroup.config))
         XCTAssertFalse(titlebarControlsShouldTrackButtonHover(config: TitlebarControlsStyle.softButtons.config))
     }
+
+    func testUnreadNotificationsKeepHoverTitlebarControlsVisible() {
+        XCTAssertTrue(titlebarControlsShouldShow(
+            visibilityMode: .onHover,
+            isHoveringControls: false,
+            isNotificationsPopoverShown: false,
+            shouldShowTitlebarShortcutHints: false,
+            unreadCount: 1
+        ))
+    }
+
+    func testHoverTitlebarControlsRemainHiddenWithoutUnreadOrInteraction() {
+        XCTAssertFalse(titlebarControlsShouldShow(
+            visibilityMode: .onHover,
+            isHoveringControls: false,
+            isNotificationsPopoverShown: false,
+            shouldShowTitlebarShortcutHints: false,
+            unreadCount: 0
+        ))
+    }
 }

@@ -250,6 +250,38 @@ struct TitlebarControlButton<Content: View>: View {
     }
 }
 
+private struct TitlebarNotificationBadge: View {
+    let unreadCount: Int
+    let config: TitlebarControlsStyleConfig
+    let isPulsing: Bool
+
+    private var label: String {
+        unreadCount > 99 ? "99+" : String(unreadCount)
+    }
+
+    private var badgeWidth: CGFloat {
+        if label.count <= 1 {
+            return config.badgeSize
+        }
+        return max(config.badgeSize + 7, CGFloat(label.count) * 6 + 7)
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: max(8, config.badgeSize - 5), weight: .semibold))
+            .foregroundColor(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .frame(width: badgeWidth, height: config.badgeSize)
+            .background(
+                Capsule().fill(Color(nsColor: .systemRed))
+            )
+            .scaleEffect(isPulsing ? 1.22 : 1.0)
+            .shadow(color: Color(nsColor: .systemRed).opacity(isPulsing ? 0.35 : 0), radius: 5, y: 1)
+            .accessibilityIdentifier("titlebarNotificationBadge")
+    }
+}
+
 struct TitlebarControlsView: View {
     @ObservedObject var notificationStore: TerminalNotificationStore
     @ObservedObject var viewModel: TitlebarControlsViewModel
@@ -264,6 +296,7 @@ struct TitlebarControlsView: View {
     @State private var shortcutRefreshTick = 0
     @State private var isHoveringControls = false
     @State private var isNotificationsPopoverShown = false
+    @State private var notificationBadgePulse = false
     @StateObject private var modifierKeyMonitor = TitlebarShortcutHintModifierMonitor()
     private let titlebarHintRightSafetyShift: CGFloat = 10
     private let titlebarHintBaseXShift: CGFloat = -10
@@ -299,10 +332,13 @@ struct TitlebarControlsView: View {
     }
 
     private var shouldShowControls: Bool {
-        if visibilityMode == .alwaysVisible {
-            return true
-        }
-        return isHoveringControls || isNotificationsPopoverShown || shouldShowTitlebarShortcutHints
+        titlebarControlsShouldShow(
+            visibilityMode: visibilityMode,
+            isHoveringControls: isHoveringControls,
+            isNotificationsPopoverShown: isNotificationsPopoverShown,
+            shouldShowTitlebarShortcutHints: shouldShowTitlebarShortcutHints,
+            unreadCount: notificationStore.unreadCount
+        )
     }
 
     var body: some View {
@@ -335,6 +371,17 @@ struct TitlebarControlsView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .cmuxNotificationsPopoverVisibilityDidChange)) { notification in
                 isNotificationsPopoverShown = (notification.userInfo?[NotificationsPopoverVisibilityUserInfoKey.isShown] as? Bool) ?? false
+            }
+            .onChange(of: notificationStore.unreadCount) { oldValue, newValue in
+                guard newValue > oldValue, newValue > 0 else { return }
+                withAnimation(.spring(response: 0.18, dampingFraction: 0.48)) {
+                    notificationBadgePulse = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        notificationBadgePulse = false
+                    }
+                }
             }
             .onAppear {
                 modifierKeyMonitor.start()
@@ -379,13 +426,11 @@ struct TitlebarControlsView: View {
                     iconLabel(systemName: "bell", config: config)
 
                     if notificationStore.unreadCount > 0 {
-                        Text("\(min(notificationStore.unreadCount, 99))")
-                            .font(.system(size: max(8, config.badgeSize - 5), weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: config.badgeSize, height: config.badgeSize)
-                            .background(
-                                Circle().fill(cmuxAccentColor())
-                            )
+                        TitlebarNotificationBadge(
+                            unreadCount: notificationStore.unreadCount,
+                            config: config,
+                            isPulsing: notificationBadgePulse
+                        )
                             .offset(x: config.badgeOffset.width, y: config.badgeOffset.height)
                     }
                 }
@@ -770,6 +815,22 @@ func titlebarControlsShouldApplyLayout(
         || abs(previous.contentSize.height - next.contentSize.height) > tolerance
         || abs(previous.containerHeight - next.containerHeight) > tolerance
         || abs(previous.yOffset - next.yOffset) > tolerance
+}
+
+func titlebarControlsShouldShow(
+    visibilityMode: TitlebarControlsVisibilityMode,
+    isHoveringControls: Bool,
+    isNotificationsPopoverShown: Bool,
+    shouldShowTitlebarShortcutHints: Bool,
+    unreadCount: Int
+) -> Bool {
+    if visibilityMode == .alwaysVisible {
+        return true
+    }
+    if unreadCount > 0 {
+        return true
+    }
+    return isHoveringControls || isNotificationsPopoverShown || shouldShowTitlebarShortcutHints
 }
 
 final class TitlebarControlsAccessoryViewController: NSTitlebarAccessoryViewController, NSPopoverDelegate {
