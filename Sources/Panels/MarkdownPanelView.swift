@@ -49,12 +49,11 @@ struct MarkdownPanelView: View {
     private var fileContentView: some View {
         VStack(alignment: .leading, spacing: 0) {
             filePathHeader
-                .padding(.horizontal, 24)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
+                .padding(.horizontal, 16)
+                .frame(height: 32)
 
             Divider()
-                .padding(.horizontal, 16)
+                .opacity(colorScheme == .dark ? 0.55 : 0.8)
 
             renderedContent
         }
@@ -382,8 +381,13 @@ private enum SyntaxHighlightedHTMLBuilder {
         usesSyntaxHighlighting: Bool
     ) -> String {
         let isDark = colorScheme == .dark
-        let background = isDark ? "#1f1f1f" : "#fafafa"
-        let foreground = isDark ? "#e6e6e6" : "#24292f"
+        let background = isDark ? "#1e1e1e" : "#ffffff"
+        let foreground = isDark ? "#d4d4d4" : "#1f2328"
+        let gutterBackground = isDark ? "#1e1e1e" : "#fbfbfb"
+        let gutterForeground = isDark ? "#858585" : "#8c959f"
+        let border = isDark ? "#2d2d2d" : "#e6e8eb"
+        let currentLine = isDark ? "#252526" : "#f6f8fa"
+        let selection = isDark ? "rgba(38, 79, 120, 0.92)" : "rgba(0, 95, 184, 0.22)"
         let themeName = isDark ? "github-dark.min" : "github.min"
         let themeCSS = readAsset(named: themeName, fileExtension: "css")
         let highlightJS = usesSyntaxHighlighting ? readAsset(named: "highlight.min", fileExtension: "js") : ""
@@ -391,6 +395,8 @@ private enum SyntaxHighlightedHTMLBuilder {
             ? SyntaxHighlightLanguage.languageClass(for: filePath)
             : nil
         let classAttribute = ["hljs", languageClass].compactMap { $0 }.joined(separator: " ")
+        let source = content.isEmpty ? " " : content
+        let lineNumbers = lineNumbersHTML(for: source)
         let highlightedScript = usesSyntaxHighlighting && !highlightJS.isEmpty
             ? "<script>\(highlightJS)</script><script>hljs.highlightAll();</script>"
             : ""
@@ -403,46 +409,121 @@ private enum SyntaxHighlightedHTMLBuilder {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
         \(themeCSS)
+        :root {
+          color-scheme: \(isDark ? "dark" : "light");
+          --editor-bg: \(background);
+          --editor-fg: \(foreground);
+          --gutter-bg: \(gutterBackground);
+          --gutter-fg: \(gutterForeground);
+          --editor-border: \(border);
+          --current-line: \(currentLine);
+          --selection: \(selection);
+          --font-size: 13px;
+          --line-height: 20px;
+        }
         html, body {
           margin: 0;
+          width: 100%;
+          height: 100%;
           min-height: 100%;
-          background: \(background);
-          color: \(foreground);
+          background: var(--editor-bg);
+          color: var(--editor-fg);
           overflow: auto;
         }
         body {
           font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-          font-size: 13px;
-          line-height: 1.45;
+          font-size: var(--font-size);
+          line-height: var(--line-height);
+          -webkit-font-smoothing: antialiased;
+          text-rendering: optimizeLegibility;
+        }
+        .editor {
+          display: grid;
+          grid-template-columns: 58px minmax(max-content, 1fr);
+          min-width: max-content;
+          min-height: 100vh;
+          background: var(--editor-bg);
+        }
+        .gutter {
+          position: sticky;
+          left: 0;
+          z-index: 2;
+          box-sizing: border-box;
+          min-height: 100vh;
+          padding: 15px 12px 16px 0;
+          background-color: var(--gutter-bg);
+          background-image: linear-gradient(
+            to bottom,
+            transparent 0 15px,
+            var(--current-line) 15px calc(15px + var(--line-height)),
+            transparent calc(15px + var(--line-height))
+          );
+          border-right: 1px solid var(--editor-border);
+          color: var(--gutter-fg);
+          text-align: right;
+          user-select: none;
+          -webkit-user-select: none;
+        }
+        .gutter span {
+          display: block;
+          height: var(--line-height);
+          line-height: var(--line-height);
+        }
+        .gutter span:first-child {
+          color: var(--editor-fg);
         }
         pre {
           margin: 0;
           min-width: max-content;
           min-height: 100vh;
+          background-color: var(--editor-bg);
+          background-image: linear-gradient(
+            to bottom,
+            transparent 0 15px,
+            var(--current-line) 15px calc(15px + var(--line-height)),
+            transparent calc(15px + var(--line-height))
+          );
         }
-        code.hljs {
+        code.hljs,
+        .hljs {
           box-sizing: border-box;
+          display: block;
           min-width: max-content;
           min-height: 100vh;
-          padding: 16px 24px;
-          background: \(background);
-          color: \(foreground);
+          padding: 15px 28px 16px 18px;
+          background: transparent !important;
+          color: var(--editor-fg);
           white-space: pre;
           tab-size: 4;
           -webkit-user-select: text;
           user-select: text;
+          line-height: var(--line-height);
+        }
+        .gutter,
+        pre {
+          grid-row: 1;
         }
         ::selection {
-          background: rgba(90, 160, 255, 0.35);
+          background: var(--selection);
         }
         </style>
         </head>
         <body>
-        <pre><code class="\(classAttribute)">\(escapeHTML(content.isEmpty ? " " : content))</code></pre>
+        <main class="editor">
+          <div class="gutter" aria-hidden="true">\(lineNumbers)</div>
+          <pre><code class="\(classAttribute)">\(escapeHTML(source))</code></pre>
+        </main>
         \(highlightedScript)
         </body>
         </html>
         """
+    }
+
+    private static func lineNumbersHTML(for text: String) -> String {
+        let lineCount = max(1, text.components(separatedBy: "\n").count)
+        return (1...lineCount)
+            .map { "<span>\($0)</span>" }
+            .joined()
     }
 
     private static func readAsset(named name: String, fileExtension ext: String) -> String {

@@ -7223,13 +7223,15 @@ final class Workspace: Identifiable, ObservableObject {
         let resolvedTitle = resolvedPanelTitle(panelId: markdownPanel.id, fallback: nextTitle)
         let titleUpdate: String? = existing.title == resolvedTitle ? nil : resolvedTitle
         let iconUpdate: String?? = existing.icon == markdownPanel.displayIcon ? nil : .some(markdownPanel.displayIcon)
+        let previewUpdate: Bool? = existing.isPreview == markdownPanel.isPreview ? nil : markdownPanel.isPreview
 
-        guard titleUpdate != nil || iconUpdate != nil else { return }
+        guard titleUpdate != nil || iconUpdate != nil || previewUpdate != nil else { return }
         bonsplitController.updateTab(
             tabId,
             title: titleUpdate,
             icon: iconUpdate,
-            hasCustomTitle: panelCustomTitles[markdownPanel.id] != nil
+            hasCustomTitle: panelCustomTitles[markdownPanel.id] != nil,
+            isPreview: previewUpdate
         )
     }
 
@@ -9211,7 +9213,8 @@ final class Workspace: Identifiable, ObservableObject {
             kind: SurfaceKind.markdown,
             isDirty: markdownPanel.isDirty,
             isLoading: false,
-            isPinned: false
+            isPinned: false,
+            isPreview: markdownPanel.isPreview
         )
         surfaceIdToPanelId[newTab.id] = markdownPanel.id
         let previousFocusedPanelId = focusedPanelId
@@ -9266,6 +9269,7 @@ final class Workspace: Identifiable, ObservableObject {
             isDirty: markdownPanel.isDirty,
             isLoading: false,
             isPinned: false,
+            isPreview: markdownPanel.isPreview,
             inPane: paneId
         ) else {
             panels.removeValue(forKey: markdownPanel.id)
