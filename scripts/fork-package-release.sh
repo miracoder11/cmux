@@ -9,6 +9,7 @@ BUNDLE_ID="${CMUX_LOW_COST_BUNDLE_ID:-com.cmuxterm.app.debug.cmux.improve}"
 SCHEME="${CMUX_BUILD_SCHEME:-cmux}"
 CONFIGURATION="${CMUX_BUILD_CONFIGURATION:-Release}"
 DESTINATION="${CMUX_BUILD_DESTINATION:-generic/platform=macOS}"
+BUILD_ARCHS="${CMUX_BUILD_ARCHS:-arm64}"
 DERIVED_DATA_PATH="${CMUX_DERIVED_DATA_PATH:-$REPO_ROOT/.build/xcode-release}"
 SOURCE_PACKAGES_DIR="${CMUX_SOURCE_PACKAGES_DIR:-$REPO_ROOT/.build/swiftpm-release}"
 ARTIFACTS_DIR="${CMUX_ARTIFACTS_DIR:-$REPO_ROOT/.build/artifacts/cmux_improve_release}"
@@ -88,6 +89,14 @@ xcodebuild \
   -clonedSourcePackagesDirPath "$SOURCE_PACKAGES_DIR" \
   -resolvePackageDependencies
 
+XCODEBUILD_SETTINGS=(
+  CODE_SIGNING_ALLOWED=NO
+  ONLY_ACTIVE_ARCH=NO
+)
+if [[ -n "$BUILD_ARCHS" ]]; then
+  XCODEBUILD_SETTINGS+=(ARCHS="$BUILD_ARCHS")
+fi
+
 CMUX_SKIP_ZIG_BUILD="${CMUX_SKIP_ZIG_BUILD:-0}" xcodebuild \
   -project GhosttyTabs.xcodeproj \
   -scheme "$SCHEME" \
@@ -96,9 +105,7 @@ CMUX_SKIP_ZIG_BUILD="${CMUX_SKIP_ZIG_BUILD:-0}" xcodebuild \
   -disableAutomaticPackageResolution \
   -destination "$DESTINATION" \
   -derivedDataPath "$DERIVED_DATA_PATH" \
-  ARCHS="arm64 x86_64" \
-  ONLY_ACTIVE_ARCH=NO \
-  CODE_SIGNING_ALLOWED=NO \
+  "${XCODEBUILD_SETTINGS[@]}" \
   build
 
 PRODUCTS_DIR="$DERIVED_DATA_PATH/Build/Products/$CONFIGURATION"
@@ -128,6 +135,9 @@ else
 fi
 MARKETING_VERSION="${CMUX_LOW_COST_MARKETING_VERSION:-${BASE_MARKETING_VERSION}-improve.${BUILD_NUMBER}}"
 SHORT_SHA="$(git rev-parse --short=9 HEAD 2>/dev/null || true)"
+EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$INFO_PLIST" 2>/dev/null || echo "cmux")"
+APP_BINARY="$PACKAGE_APP_PATH/Contents/MacOS/$EXECUTABLE_NAME"
+APP_ARCHS="$(lipo -archs "$APP_BINARY" 2>/dev/null || echo "unknown")"
 
 plist_set_or_add "$INFO_PLIST" "CFBundleName" "string" "$APP_NAME"
 plist_set_or_add "$INFO_PLIST" "CFBundleDisplayName" "string" "$APP_NAME"
@@ -181,6 +191,7 @@ This is a low-cost Release build for local testing.
 - Marketing version: ${MARKETING_VERSION}
 - Build number: ${BUILD_NUMBER}
 - Commit: ${SHORT_SHA:-unknown}
+- Architectures: ${APP_ARCHS}
 - Code signing: ad-hoc
 - Apple notarization: no
 
@@ -210,6 +221,7 @@ SOCKET_PATH="/tmp/cmux-debug-${SOCKET_SLUG}.sock"
   echo "MARKETING_VERSION=$MARKETING_VERSION"
   echo "BUILD_NUMBER=$BUILD_NUMBER"
   echo "COMMIT=${SHORT_SHA:-unknown}"
+  echo "APP_ARCHS=$APP_ARCHS"
 } > "$METADATA_PATH"
 
 echo "Low-cost release package created:"
