@@ -519,6 +519,7 @@ final class FileExplorerStore: ObservableObject {
     @Published var rootNodes: [FileExplorerNode] = []
     @Published private(set) var isRootLoading: Bool = false
     @Published private(set) var gitStatusByPath: [String: GitFileStatus] = [:]
+    @Published private(set) var gitFileStatusByPath: [String: GitFileStatus] = [:]
 
     var provider: FileExplorerProvider?
 
@@ -568,6 +569,7 @@ final class FileExplorerStore: ObservableObject {
     func refreshGitStatus() {
         guard !rootPath.isEmpty else {
             gitStatusByPath = [:]
+            gitFileStatusByPath = [:]
             return
         }
         let path = rootPath
@@ -577,19 +579,21 @@ final class FileExplorerStore: ObservableObject {
             let identity = sshProvider.identityFile
             let opts = sshProvider.sshOptions
             DispatchQueue.global(qos: .utility).async {
-                let status = GitStatusProvider.fetchStatusSSH(
+                let snapshot = GitStatusProvider.fetchStatusSnapshotSSH(
                     directory: path, destination: dest, port: port,
                     identityFile: identity, sshOptions: opts
                 )
                 DispatchQueue.main.async { [weak self] in
-                    self?.gitStatusByPath = status
+                    self?.gitStatusByPath = snapshot.treeStatusByPath
+                    self?.gitFileStatusByPath = snapshot.fileStatusByPath
                 }
             }
         } else {
             DispatchQueue.global(qos: .utility).async {
-                let status = GitStatusProvider.fetchStatus(directory: path)
+                let snapshot = GitStatusProvider.fetchStatusSnapshot(directory: path)
                 DispatchQueue.main.async { [weak self] in
-                    self?.gitStatusByPath = status
+                    self?.gitStatusByPath = snapshot.treeStatusByPath
+                    self?.gitFileStatusByPath = snapshot.fileStatusByPath
                 }
             }
         }
@@ -833,15 +837,26 @@ final class FileExplorerDirectoryWatcher {
 
 // MARK: - Git Status
 
-enum GitFileStatus {
+enum GitFileStatus: Sendable {
     case modified, added, deleted, renamed, untracked
+}
+
+struct GitStatusSnapshot: Sendable {
+    let treeStatusByPath: [String: GitFileStatus]
+    let fileStatusByPath: [String: GitFileStatus]
+
+    static let empty = GitStatusSnapshot(treeStatusByPath: [:], fileStatusByPath: [:])
 }
 
 /// Runs `git status --porcelain` and parses results into a path-to-status map.
 enum GitStatusProvider {
 
     static func fetchStatus(directory: String) -> [String: GitFileStatus] {
-        guard let repoRoot = gitRepoRoot(for: directory) else { return [:] }
+        fetchStatusSnapshot(directory: directory).treeStatusByPath
+    }
+
+    static func fetchStatusSnapshot(directory: String) -> GitStatusSnapshot {
+        guard let repoRoot = gitRepoRoot(for: directory) else { return .empty }
         return parseGitStatus(
             output: runGit(in: repoRoot, arguments: ["status", "--porcelain"]),
             repoRoot: repoRoot,
@@ -853,24 +868,38 @@ enum GitStatusProvider {
         directory: String, destination: String, port: Int?,
         identityFile: String?, sshOptions: [String]
     ) -> [String: GitFileStatus] {
+        fetchStatusSnapshotSSH(
+            directory: directory,
+            destination: destination,
+            port: port,
+            identityFile: identityFile,
+            sshOptions: sshOptions
+        ).treeStatusByPath
+    }
+
+    static func fetchStatusSnapshotSSH(
+        directory: String, destination: String, port: Int?,
+        identityFile: String?, sshOptions: [String]
+    ) -> GitStatusSnapshot {
         let escapedDir = directory.replacingOccurrences(of: "'", with: "'\\''")
         let cmd = "cd '\(escapedDir)' 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null && echo '---GIT_STATUS---' && git status --porcelain 2>/dev/null"
         guard let output = runSSH(
             command: cmd, destination: destination,
             port: port, identityFile: identityFile, sshOptions: sshOptions
-        ) else { return [:] }
+        ) else { return .empty }
 
         let parts = output.components(separatedBy: "---GIT_STATUS---\n")
-        guard parts.count == 2 else { return [:] }
+        guard parts.count == 2 else { return .empty }
         let repoRoot = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
         return parseGitStatus(output: parts[1], repoRoot: repoRoot, explorerRoot: directory)
     }
 
     private static func parseGitStatus(
         output: String?, repoRoot: String, explorerRoot: String
-    ) -> [String: GitFileStatus] {
-        guard let output, !output.isEmpty else { return [:] }
-        var statusMap: [String: GitFileStatus] = [:]
+    ) -> GitStatusSnapshot {
+        guard let output, !output.isEmpty else { return .empty }
+        var treeStatusMap: [String: GitFileStatus] = [:]
+        var fileStatusMap: [String: GitFileStatus] = [:]
 
         for line in output.components(separatedBy: "\n") where line.count >= 4 {
             let indexStatus = line[line.startIndex]
@@ -888,10 +917,11 @@ enum GitStatusProvider {
             let absolutePath = repoRoot.hasSuffix("/") ? repoRoot + path : repoRoot + "/" + path
             guard absolutePath.hasPrefix(explorerRoot) else { continue }
 
-            statusMap[absolutePath] = status
-            markParentDirectories(absolutePath: absolutePath, explorerRoot: explorerRoot, status: status, in: &statusMap)
+            fileStatusMap[absolutePath] = status
+            treeStatusMap[absolutePath] = status
+            markParentDirectories(absolutePath: absolutePath, explorerRoot: explorerRoot, status: status, in: &treeStatusMap)
         }
-        return statusMap
+        return GitStatusSnapshot(treeStatusByPath: treeStatusMap, fileStatusByPath: fileStatusMap)
     }
 
     private static func parseStatusChars(index: Character, workTree: Character) -> GitFileStatus? {

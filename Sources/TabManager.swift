@@ -5361,6 +5361,38 @@ class TabManager: ObservableObject {
         )
     }
 
+    @discardableResult
+    func openFilePreview(path: String) -> UUID? {
+        guard let tabId = selectedTabId else { return nil }
+        return openFilePreview(inWorkspace: tabId, path: path)
+    }
+
+    @discardableResult
+    func openFilePreview(inWorkspace tabId: UUID, path: String) -> UUID? {
+        let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
+        guard let workspace = tabs.first(where: { $0.id == tabId }) else { return nil }
+
+        if selectedTabId != tabId {
+            selectedTabId = tabId
+        }
+
+        if let existingPanel = workspace.panels.values
+            .compactMap({ $0 as? MarkdownPanel })
+            .first(where: { URL(fileURLWithPath: $0.filePath).standardizedFileURL.path == standardizedPath }) {
+            workspace.focusPanel(existingPanel.id)
+            rememberFocusedSurface(tabId: tabId, surfaceId: existingPanel.id)
+            return existingPanel.id
+        }
+
+        guard let paneId = workspace.bonsplitController.focusedPaneId ?? workspace.bonsplitController.allPaneIds.first,
+              let markdownPanel = workspace.newMarkdownSurface(inPane: paneId, filePath: standardizedPath, focus: true) else {
+            return nil
+        }
+
+        rememberFocusedSurface(tabId: tabId, surfaceId: markdownPanel.id)
+        return markdownPanel.id
+    }
+
     /// Reopen the most recently closed browser panel (Cmd+Shift+T).
     /// No-op when no browser panel restore snapshot is available.
     @discardableResult

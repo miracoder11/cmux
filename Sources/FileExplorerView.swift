@@ -10,9 +10,10 @@ import SwiftUI
 struct FileExplorerPanelView: NSViewRepresentable {
     @ObservedObject var store: FileExplorerStore
     @ObservedObject var state: FileExplorerState
+    var onOpenFile: (String) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(store: store, state: state)
+        Coordinator(store: store, state: state, onOpenFile: onOpenFile)
     }
 
     func makeNSView(context: Context) -> FileExplorerContainerView {
@@ -24,6 +25,7 @@ struct FileExplorerPanelView: NSViewRepresentable {
     func updateNSView(_ container: FileExplorerContainerView, context: Context) {
         context.coordinator.store = store
         context.coordinator.state = state
+        context.coordinator.onOpenFile = onOpenFile
         container.updateHeader(store: store)
         context.coordinator.reloadIfNeeded()
     }
@@ -33,15 +35,17 @@ struct FileExplorerPanelView: NSViewRepresentable {
     final class Coordinator: NSObject, NSOutlineViewDataSource, NSOutlineViewDelegate, NSMenuDelegate {
         var store: FileExplorerStore
         var state: FileExplorerState
+        var onOpenFile: (String) -> Void
         weak var containerView: FileExplorerContainerView?
         weak var outlineView: NSOutlineView?
         private var lastRootNodeCount: Int = -1
         private var observationCancellable: AnyCancellable?
         private var styleObserver: Any?
 
-        init(store: FileExplorerStore, state: FileExplorerState) {
+        init(store: FileExplorerStore, state: FileExplorerState, onOpenFile: @escaping (String) -> Void) {
             self.store = store
             self.state = state
+            self.onOpenFile = onOpenFile
             super.init()
             observeStore()
             styleObserver = NotificationCenter.default.addObserver(
@@ -205,6 +209,35 @@ struct FileExplorerPanelView: NSViewRepresentable {
             FileExplorerStyle.current.rowHeight
         }
 
+        @objc func outlineViewSingleClick(_ sender: NSOutlineView) {
+            guard let node = clickedOrSelectedNode(in: sender), !node.isDirectory else { return }
+            openInCmuxIfSupported(node)
+        }
+
+        @objc func outlineViewDoubleClick(_ sender: NSOutlineView) {
+            guard let node = clickedOrSelectedNode(in: sender) else { return }
+            if node.isDirectory {
+                if sender.isItemExpanded(node) {
+                    sender.collapseItem(node)
+                } else {
+                    sender.expandItem(node)
+                }
+                return
+            }
+            openInCmuxIfSupported(node)
+        }
+
+        private func clickedOrSelectedNode(in outlineView: NSOutlineView) -> FileExplorerNode? {
+            let row = outlineView.clickedRow >= 0 ? outlineView.clickedRow : outlineView.selectedRow
+            guard row >= 0 else { return nil }
+            return outlineView.item(atRow: row) as? FileExplorerNode
+        }
+
+        private func openInCmuxIfSupported(_ node: FileExplorerNode) {
+            guard !node.isDirectory, store.provider is LocalFileExplorerProvider else { return }
+            onOpenFile(node.path)
+        }
+
         // MARK: - Drag-to-Terminal
 
         func outlineView(_ outlineView: NSOutlineView, pasteboardWriterForItem item: Any) -> (any NSPasteboardWriting)? {
@@ -225,6 +258,15 @@ struct FileExplorerPanelView: NSViewRepresentable {
             let isLocal = store.provider is LocalFileExplorerProvider
 
             if !node.isDirectory && isLocal {
+                let previewItem = NSMenuItem(
+                    title: String(localized: "fileExplorer.contextMenu.previewInCmux", defaultValue: "Preview in cmux"),
+                    action: #selector(contextMenuPreviewInCmux(_:)),
+                    keyEquivalent: ""
+                )
+                previewItem.target = self
+                previewItem.representedObject = node
+                menu.addItem(previewItem)
+
                 let openItem = NSMenuItem(
                     title: String(localized: "fileExplorer.contextMenu.openDefault", defaultValue: "Open in Default Editor"),
                     action: #selector(contextMenuOpenInDefaultEditor(_:)),
@@ -265,6 +307,11 @@ struct FileExplorerPanelView: NSViewRepresentable {
             copyRelItem.target = self
             copyRelItem.representedObject = node
             menu.addItem(copyRelItem)
+        }
+
+        @objc private func contextMenuPreviewInCmux(_ sender: NSMenuItem) {
+            guard let node = sender.representedObject as? FileExplorerNode else { return }
+            openInCmuxIfSupported(node)
         }
 
         @objc private func contextMenuOpenInDefaultEditor(_ sender: NSMenuItem) {
@@ -356,6 +403,9 @@ final class FileExplorerContainerView: NSView {
 
         outlineView.dataSource = coordinator
         outlineView.delegate = coordinator
+        outlineView.target = coordinator
+        outlineView.action = #selector(FileExplorerPanelView.Coordinator.outlineViewSingleClick(_:))
+        outlineView.doubleAction = #selector(FileExplorerPanelView.Coordinator.outlineViewDoubleClick(_:))
         coordinator.outlineView = outlineView
 
         // Context menu

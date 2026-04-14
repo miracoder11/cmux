@@ -1,6 +1,11 @@
 import Foundation
 import Combine
 
+enum MarkdownPanelRenderMode: Sendable, Equatable {
+    case markdown
+    case plainText
+}
+
 /// A panel that renders a markdown file with live file-watching.
 /// When the file changes on disk, the content is automatically reloaded.
 @MainActor
@@ -10,6 +15,9 @@ final class MarkdownPanel: Panel, ObservableObject {
 
     /// Absolute path to the markdown file being displayed.
     let filePath: String
+
+    /// How the file content should be rendered.
+    let renderMode: MarkdownPanelRenderMode
 
     /// The workspace this panel belongs to.
     private(set) var workspaceId: UUID
@@ -21,7 +29,12 @@ final class MarkdownPanel: Panel, ObservableObject {
     @Published private(set) var displayTitle: String = ""
 
     /// SF Symbol icon for the tab bar.
-    var displayIcon: String? { "doc.richtext" }
+    var displayIcon: String? {
+        switch renderMode {
+        case .markdown: return "doc.richtext"
+        case .plainText: return "doc.text"
+        }
+    }
 
     /// Whether the file has been deleted or is unreadable.
     @Published private(set) var isFileUnavailable: Bool = false
@@ -49,6 +62,7 @@ final class MarkdownPanel: Panel, ObservableObject {
         self.id = UUID()
         self.workspaceId = workspaceId
         self.filePath = filePath
+        self.renderMode = Self.renderMode(for: filePath)
         self.displayTitle = (filePath as NSString).lastPathComponent
 
         loadFileContent()
@@ -57,6 +71,16 @@ final class MarkdownPanel: Panel, ObservableObject {
             // Session restore can create a panel before the file is recreated.
             // Retry briefly so atomic-rename recreations can reconnect.
             scheduleReattach(attempt: 1)
+        }
+    }
+
+    private static func renderMode(for filePath: String) -> MarkdownPanelRenderMode {
+        let ext = URL(fileURLWithPath: filePath).pathExtension.lowercased()
+        switch ext {
+        case "md", "markdown", "mdown", "mkd", "mdx":
+            return .markdown
+        default:
+            return .plainText
         }
     }
 

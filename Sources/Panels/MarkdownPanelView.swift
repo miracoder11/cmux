@@ -19,7 +19,7 @@ struct MarkdownPanelView: View {
             if panel.isFileUnavailable {
                 fileUnavailableView
             } else {
-                markdownContentView
+                fileContentView
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -45,7 +45,7 @@ struct MarkdownPanelView: View {
 
     // MARK: - Content
 
-    private var markdownContentView: some View {
+    private var fileContentView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // File path breadcrumb
@@ -57,10 +57,27 @@ struct MarkdownPanelView: View {
                 Divider()
                     .padding(.horizontal, 16)
 
-                // Rendered markdown
-                Markdown(panel.content)
-                    .markdownTheme(cmuxMarkdownTheme)
+                renderedContent
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var renderedContent: some View {
+        switch panel.renderMode {
+        case .markdown:
+            Markdown(panel.content)
+                .markdownTheme(cmuxMarkdownTheme)
+                .textSelection(.enabled)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 16)
+        case .plainText:
+            ScrollView(.horizontal, showsIndicators: true) {
+                Text(panel.content.isEmpty ? " " : panel.content)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.88) : .primary)
                     .textSelection(.enabled)
+                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 16)
             }
@@ -69,7 +86,7 @@ struct MarkdownPanelView: View {
 
     private var filePathHeader: some View {
         HStack(spacing: 6) {
-            Image(systemName: "doc.richtext")
+            Image(systemName: panel.renderMode == .markdown ? "doc.richtext" : "doc.text")
                 .foregroundColor(.secondary)
                 .font(.system(size: 12))
             Text(panel.filePath)

@@ -2669,6 +2669,7 @@ struct ContentView: View {
             updateViewModel: updateViewModel,
             fileExplorerStore: fileExplorerStore,
             fileExplorerState: fileExplorerState,
+            onOpenFile: openFileExplorerPreview,
             onSendFeedback: presentFeedbackComposer,
             selection: $sidebarSelectionState.selection,
             selectedTabIds: $selectedTabIds,
@@ -2778,7 +2779,11 @@ struct ContentView: View {
             if explorerVisible {
                 Divider()
             }
-            FileExplorerPanelView(store: fileExplorerStore, state: fileExplorerState)
+            FileExplorerPanelView(
+                store: fileExplorerStore,
+                state: fileExplorerState,
+                onOpenFile: openFileExplorerPreview
+            )
                 .frame(width: explorerVisible ? fileExplorerWidth : 0)
                 .clipped()
                 .allowsHitTesting(explorerVisible)
@@ -3026,6 +3031,17 @@ struct ContentView: View {
             }
             fileExplorerStore.setRootPath(dir)
         }
+    }
+
+    private func openFileExplorerPreview(path: String) {
+        let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty,
+              FileManager.default.fileExists(atPath: trimmedPath) else {
+            return
+        }
+
+        let standardizedPath = URL(fileURLWithPath: trimmedPath).standardizedFileURL.path
+        _ = tabManager.openFilePreview(path: standardizedPath)
     }
 
     private var focusedDirectory: String? {
@@ -10094,6 +10110,7 @@ struct VerticalTabsSidebar: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     @ObservedObject var fileExplorerStore: FileExplorerStore
     @ObservedObject var fileExplorerState: FileExplorerState
+    let onOpenFile: (String) -> Void
     let onSendFeedback: () -> Void
     @EnvironmentObject var tabManager: TabManager
     @EnvironmentObject var notificationStore: TerminalNotificationStore
@@ -10258,12 +10275,16 @@ struct VerticalTabsSidebar: View {
                                 .frame(width: 0, height: 0)
                             )
                         case .files:
-                            FileExplorerPanelView(store: fileExplorerStore, state: fileExplorerState)
+                            FileExplorerPanelView(
+                                store: fileExplorerStore,
+                                state: fileExplorerState,
+                                onOpenFile: onOpenFile
+                            )
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .accessibilityIdentifier("SidebarFilesActivity")
                         case .git:
                             ScrollView {
-                                SidebarGitStatusView(store: fileExplorerStore)
+                                SidebarGitStatusView(store: fileExplorerStore, onOpenFile: onOpenFile)
                                     .padding(.horizontal, 10)
                                     .padding(.top, 4)
                                     .padding(.bottom, 12)
@@ -10505,6 +10526,7 @@ private struct SidebarActivityPlaceholder: View {
 
 private struct SidebarGitStatusView: View {
     @ObservedObject var store: FileExplorerStore
+    let onOpenFile: (String) -> Void
     @EnvironmentObject private var tabManager: TabManager
 
     private var selectedWorkspace: Workspace? {
@@ -10513,7 +10535,11 @@ private struct SidebarGitStatusView: View {
     }
 
     private var statusCounts: SidebarGitStatusCounts {
-        SidebarGitStatusCounts(statuses: Array(store.gitStatusByPath.values))
+        SidebarGitStatusCounts(statuses: Array(store.gitFileStatusByPath.values))
+    }
+
+    private var changedFiles: [SidebarGitChangedFile] {
+        SidebarGitChangedFile.rows(statusByPath: store.gitFileStatusByPath, rootPath: store.rootPath)
     }
 
     var body: some View {
@@ -10526,6 +10552,7 @@ private struct SidebarGitStatusView: View {
 
                 branchSection(workspace)
                 statusSection(workspace)
+                changedFilesSection()
                 directoriesSection(workspace)
                 pullRequestsSection(workspace)
             } else {
@@ -10588,6 +10615,21 @@ private struct SidebarGitStatusView: View {
                     SidebarGitStatusPill(label: String(localized: "sidebar.git.deleted", defaultValue: "Deleted"), count: statusCounts.deleted, color: Color(nsColor: .systemRed))
                     SidebarGitStatusPill(label: String(localized: "sidebar.git.renamed", defaultValue: "Renamed"), count: statusCounts.renamed, color: Color(nsColor: .systemTeal))
                     SidebarGitStatusPill(label: String(localized: "sidebar.git.untracked", defaultValue: "Untracked"), count: statusCounts.untracked, color: Color(nsColor: .secondaryLabelColor))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func changedFilesSection() -> some View {
+        SidebarGitPanelSection(title: String(localized: "sidebar.git.changedFiles", defaultValue: "Changed Files")) {
+            if changedFiles.isEmpty {
+                SidebarGitMutedText(String(localized: "sidebar.git.noChangedFiles", defaultValue: "No changed files."))
+            } else {
+                LazyVStack(alignment: .leading, spacing: 3) {
+                    ForEach(changedFiles) { file in
+                        SidebarGitChangedFileRow(file: file, onOpenFile: onOpenFile)
+                    }
                 }
             }
         }
@@ -10721,6 +10763,78 @@ private struct SidebarGitStatusPill: View {
     }
 }
 
+private struct SidebarGitChangedFile: Identifiable {
+    let path: String
+    let relativePath: String
+    let status: GitFileStatus
+
+    var id: String { path }
+
+    static func rows(statusByPath: [String: GitFileStatus], rootPath: String) -> [SidebarGitChangedFile] {
+        let normalizedRoot = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        return statusByPath.map { path, status in
+            let relativePath: String
+            if !rootPath.isEmpty, path.hasPrefix(normalizedRoot) {
+                relativePath = String(path.dropFirst(normalizedRoot.count))
+            } else if path == rootPath {
+                relativePath = (path as NSString).lastPathComponent
+            } else {
+                relativePath = path
+            }
+            return SidebarGitChangedFile(path: path, relativePath: relativePath, status: status)
+        }
+        .sorted { lhs, rhs in
+            if lhs.status.sidebarSortOrder != rhs.status.sidebarSortOrder {
+                return lhs.status.sidebarSortOrder < rhs.status.sidebarSortOrder
+            }
+            return lhs.relativePath.localizedCaseInsensitiveCompare(rhs.relativePath) == .orderedAscending
+        }
+    }
+}
+
+private struct SidebarGitChangedFileRow: View {
+    let file: SidebarGitChangedFile
+    let onOpenFile: (String) -> Void
+    @State private var isHovered = false
+
+    var body: some View {
+        let isOpenable = FileManager.default.fileExists(atPath: file.path)
+        Button {
+            guard isOpenable else { return }
+            onOpenFile(file.path)
+        } label: {
+            HStack(spacing: 6) {
+                Text(file.status.sidebarShortLabel)
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(file.status.sidebarColor)
+                    .frame(width: 14, alignment: .center)
+
+                Text(file.relativePath)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(isOpenable ? Color.primary : Color.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 23)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color.primary.opacity(isHovered ? 0.07 : 0.0))
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(!isOpenable)
+        .opacity(isOpenable ? 1 : 0.62)
+        .help(isOpenable ? file.path : String(localized: "sidebar.git.fileUnavailable", defaultValue: "File is not available on disk."))
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
 private struct SidebarGitStatusCounts {
     var modified = 0
     var added = 0
@@ -10742,6 +10856,38 @@ private struct SidebarGitStatusCounts {
 
     var total: Int {
         modified + added + deleted + renamed + untracked
+    }
+}
+
+private extension GitFileStatus {
+    var sidebarSortOrder: Int {
+        switch self {
+        case .modified: return 0
+        case .added: return 1
+        case .renamed: return 2
+        case .deleted: return 3
+        case .untracked: return 4
+        }
+    }
+
+    var sidebarShortLabel: String {
+        switch self {
+        case .modified: return "M"
+        case .added: return "A"
+        case .deleted: return "D"
+        case .renamed: return "R"
+        case .untracked: return "?"
+        }
+    }
+
+    var sidebarColor: Color {
+        switch self {
+        case .modified: return Color(nsColor: .systemOrange)
+        case .added: return Color(nsColor: .systemGreen)
+        case .deleted: return Color(nsColor: .systemRed)
+        case .renamed: return Color(nsColor: .systemTeal)
+        case .untracked: return Color(nsColor: .secondaryLabelColor)
+        }
     }
 }
 
