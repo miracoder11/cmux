@@ -5363,12 +5363,38 @@ class TabManager: ObservableObject {
 
     @discardableResult
     func openFilePreview(path: String) -> UUID? {
-        guard let tabId = selectedTabId else { return nil }
-        return openFilePreview(inWorkspace: tabId, path: path)
+        previewFile(path: path)
     }
 
     @discardableResult
     func openFilePreview(inWorkspace tabId: UUID, path: String) -> UUID? {
+        previewFile(inWorkspace: tabId, path: path)
+    }
+
+    @discardableResult
+    func previewFile(path: String) -> UUID? {
+        guard let tabId = selectedTabId else { return nil }
+        return previewFile(inWorkspace: tabId, path: path)
+    }
+
+    @discardableResult
+    func previewFile(inWorkspace tabId: UUID, path: String) -> UUID? {
+        openFile(inWorkspace: tabId, path: path, asPreview: true)
+    }
+
+    @discardableResult
+    func openFile(path: String) -> UUID? {
+        guard let tabId = selectedTabId else { return nil }
+        return openFile(inWorkspace: tabId, path: path)
+    }
+
+    @discardableResult
+    func openFile(inWorkspace tabId: UUID, path: String) -> UUID? {
+        openFile(inWorkspace: tabId, path: path, asPreview: false)
+    }
+
+    @discardableResult
+    private func openFile(inWorkspace tabId: UUID, path: String, asPreview: Bool) -> UUID? {
         let standardizedPath = URL(fileURLWithPath: path).standardizedFileURL.path
         guard let workspace = tabs.first(where: { $0.id == tabId }) else { return nil }
 
@@ -5379,13 +5405,30 @@ class TabManager: ObservableObject {
         if let existingPanel = workspace.panels.values
             .compactMap({ $0 as? MarkdownPanel })
             .first(where: { URL(fileURLWithPath: $0.filePath).standardizedFileURL.path == standardizedPath }) {
+            if !asPreview {
+                existingPanel.commitPreview()
+                workspace.updateMarkdownPanelPresentation(existingPanel)
+            }
             workspace.focusPanel(existingPanel.id)
             rememberFocusedSurface(tabId: tabId, surfaceId: existingPanel.id)
             return existingPanel.id
         }
 
+        if asPreview, let previewPanel = workspace.previewMarkdownPanel() {
+            previewPanel.replaceFile(path: standardizedPath, keepPreview: true)
+            workspace.updateMarkdownPanelPresentation(previewPanel)
+            workspace.focusPanel(previewPanel.id)
+            rememberFocusedSurface(tabId: tabId, surfaceId: previewPanel.id)
+            return previewPanel.id
+        }
+
         guard let paneId = workspace.bonsplitController.focusedPaneId ?? workspace.bonsplitController.allPaneIds.first,
-              let markdownPanel = workspace.newMarkdownSurface(inPane: paneId, filePath: standardizedPath, focus: true) else {
+              let markdownPanel = workspace.newMarkdownSurface(
+                  inPane: paneId,
+                  filePath: standardizedPath,
+                  focus: true,
+                  isPreview: asPreview
+              ) else {
             return nil
         }
 

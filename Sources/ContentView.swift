@@ -2669,7 +2669,8 @@ struct ContentView: View {
             updateViewModel: updateViewModel,
             fileExplorerStore: fileExplorerStore,
             fileExplorerState: fileExplorerState,
-            onOpenFile: openFileExplorerPreview,
+            onPreviewFile: previewFileExplorerFile,
+            onOpenFile: openFileExplorerFile,
             onSendFeedback: presentFeedbackComposer,
             selection: $sidebarSelectionState.selection,
             selectedTabIds: $selectedTabIds,
@@ -2782,7 +2783,8 @@ struct ContentView: View {
             FileExplorerPanelView(
                 store: fileExplorerStore,
                 state: fileExplorerState,
-                onOpenFile: openFileExplorerPreview
+                onPreviewFile: previewFileExplorerFile,
+                onOpenFile: openFileExplorerFile
             )
                 .frame(width: explorerVisible ? fileExplorerWidth : 0)
                 .clipped()
@@ -3033,15 +3035,26 @@ struct ContentView: View {
         }
     }
 
-    private func openFileExplorerPreview(path: String) {
+    private func normalizedExistingFileExplorerPath(_ path: String) -> String? {
         let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        var isDirectory: ObjCBool = false
         guard !trimmedPath.isEmpty,
-              FileManager.default.fileExists(atPath: trimmedPath) else {
-            return
+              FileManager.default.fileExists(atPath: trimmedPath, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            return nil
         }
 
-        let standardizedPath = URL(fileURLWithPath: trimmedPath).standardizedFileURL.path
-        _ = tabManager.openFilePreview(path: standardizedPath)
+        return URL(fileURLWithPath: trimmedPath).standardizedFileURL.path
+    }
+
+    private func previewFileExplorerFile(path: String) {
+        guard let standardizedPath = normalizedExistingFileExplorerPath(path) else { return }
+        _ = tabManager.previewFile(path: standardizedPath)
+    }
+
+    private func openFileExplorerFile(path: String) {
+        guard let standardizedPath = normalizedExistingFileExplorerPath(path) else { return }
+        _ = tabManager.openFile(path: standardizedPath)
     }
 
     private var focusedDirectory: String? {
@@ -10110,6 +10123,7 @@ struct VerticalTabsSidebar: View {
     @ObservedObject var updateViewModel: UpdateViewModel
     @ObservedObject var fileExplorerStore: FileExplorerStore
     @ObservedObject var fileExplorerState: FileExplorerState
+    let onPreviewFile: (String) -> Void
     let onOpenFile: (String) -> Void
     let onSendFeedback: () -> Void
     @EnvironmentObject var tabManager: TabManager
@@ -10278,13 +10292,14 @@ struct VerticalTabsSidebar: View {
                             FileExplorerPanelView(
                                 store: fileExplorerStore,
                                 state: fileExplorerState,
+                                onPreviewFile: onPreviewFile,
                                 onOpenFile: onOpenFile
                             )
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                                 .accessibilityIdentifier("SidebarFilesActivity")
                         case .git:
                             ScrollView {
-                                SidebarGitStatusView(store: fileExplorerStore, onOpenFile: onOpenFile)
+                                SidebarGitStatusView(store: fileExplorerStore, onPreviewFile: onPreviewFile)
                                     .padding(.horizontal, 10)
                                     .padding(.top, 4)
                                     .padding(.bottom, 12)
@@ -10526,7 +10541,7 @@ private struct SidebarActivityPlaceholder: View {
 
 private struct SidebarGitStatusView: View {
     @ObservedObject var store: FileExplorerStore
-    let onOpenFile: (String) -> Void
+    let onPreviewFile: (String) -> Void
     @EnvironmentObject private var tabManager: TabManager
 
     private var selectedWorkspace: Workspace? {
@@ -10628,7 +10643,7 @@ private struct SidebarGitStatusView: View {
             } else {
                 LazyVStack(alignment: .leading, spacing: 3) {
                     ForEach(changedFiles) { file in
-                        SidebarGitChangedFileRow(file: file, onOpenFile: onOpenFile)
+                        SidebarGitChangedFileRow(file: file, onPreviewFile: onPreviewFile)
                     }
                 }
             }
@@ -10794,14 +10809,14 @@ private struct SidebarGitChangedFile: Identifiable {
 
 private struct SidebarGitChangedFileRow: View {
     let file: SidebarGitChangedFile
-    let onOpenFile: (String) -> Void
+    let onPreviewFile: (String) -> Void
     @State private var isHovered = false
 
     var body: some View {
-        let isOpenable = FileManager.default.fileExists(atPath: file.path)
+        let isOpenable = Self.isOpenableFile(file.path)
         Button {
             guard isOpenable else { return }
-            onOpenFile(file.path)
+            onPreviewFile(file.path)
         } label: {
             HStack(spacing: 6) {
                 Text(file.status.sidebarShortLabel)
@@ -10832,6 +10847,11 @@ private struct SidebarGitChangedFileRow: View {
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+
+    private static func isOpenableFile(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && !isDirectory.boolValue
     }
 }
 

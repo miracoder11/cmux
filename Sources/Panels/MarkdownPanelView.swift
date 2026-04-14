@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import MarkdownUI
+import WebKit
 
 /// SwiftUI view that renders a MarkdownPanel's content using MarkdownUI.
 struct MarkdownPanelView: View {
@@ -46,19 +47,16 @@ struct MarkdownPanelView: View {
     // MARK: - Content
 
     private var fileContentView: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                // File path breadcrumb
-                filePathHeader
-                    .padding(.horizontal, 24)
-                    .padding(.top, 16)
-                    .padding(.bottom, 8)
+        VStack(alignment: .leading, spacing: 0) {
+            filePathHeader
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+                .padding(.bottom, 8)
 
-                Divider()
-                    .padding(.horizontal, 16)
+            Divider()
+                .padding(.horizontal, 16)
 
-                renderedContent
-            }
+            renderedContent
         }
     }
 
@@ -66,27 +64,46 @@ struct MarkdownPanelView: View {
     private var renderedContent: some View {
         switch panel.renderMode {
         case .markdown:
-            Markdown(panel.content)
-                .markdownTheme(cmuxMarkdownTheme)
-                .textSelection(.enabled)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 16)
-        case .plainText:
-            ScrollView(.horizontal, showsIndicators: true) {
-                Text(panel.content.isEmpty ? " " : panel.content)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.88) : .primary)
+            ScrollView {
+                Markdown(panel.content)
+                    .markdownTheme(cmuxMarkdownTheme)
                     .textSelection(.enabled)
-                    .fixedSize(horizontal: true, vertical: false)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
             }
+        case .image:
+            imageContentView
+        case .code, .plainText:
+            SyntaxHighlightedCodeView(
+                content: panel.content,
+                filePath: panel.filePath,
+                colorScheme: colorScheme,
+                usesSyntaxHighlighting: panel.renderMode == .code
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder
+    private var imageContentView: some View {
+        if let image = NSImage(contentsOfFile: panel.filePath) {
+            GeometryReader { proxy in
+                ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(minWidth: proxy.size.width, minHeight: proxy.size.height)
+                }
+            }
+        } else {
+            fileUnavailableView
         }
     }
 
     private var filePathHeader: some View {
         HStack(spacing: 6) {
-            Image(systemName: panel.renderMode == .markdown ? "doc.richtext" : "doc.text")
+            Image(systemName: panel.displayIcon ?? "doc")
                 .foregroundColor(.secondary)
                 .font(.system(size: 12))
             Text(panel.filePath)
@@ -95,6 +112,17 @@ struct MarkdownPanelView: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer()
+            if panel.isPreview {
+                Text(String(localized: "markdown.previewBadge", defaultValue: "Preview"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 6)
+                    .frame(height: 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(Color.primary.opacity(0.06))
+                    )
+            }
         }
     }
 
@@ -303,6 +331,181 @@ struct MarkdownPanelView: View {
             return .easeIn(duration: duration)
         case .easeOut:
             return .easeOut(duration: duration)
+        }
+    }
+}
+
+private struct SyntaxHighlightedCodeView: NSViewRepresentable {
+    let content: String
+    let filePath: String
+    let colorScheme: ColorScheme
+    let usesSyntaxHighlighting: Bool
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.setValue(false, forKey: "drawsBackground")
+        webView.allowsMagnification = true
+        webView.allowsBackForwardNavigationGestures = false
+        webView.navigationDelegate = context.coordinator
+        return webView
+    }
+
+    func updateNSView(_ webView: WKWebView, context: Context) {
+        let html = SyntaxHighlightedHTMLBuilder.html(
+            content: content,
+            filePath: filePath,
+            colorScheme: colorScheme,
+            usesSyntaxHighlighting: usesSyntaxHighlighting
+        )
+        guard context.coordinator.lastHTML != html else { return }
+        context.coordinator.lastHTML = html
+        webView.loadHTMLString(html, baseURL: Bundle.main.resourceURL)
+    }
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        var lastHTML: String?
+    }
+}
+
+private enum SyntaxHighlightedHTMLBuilder {
+    private static let assetDirectory = "syntax-highlighting"
+
+    static func html(
+        content: String,
+        filePath: String,
+        colorScheme: ColorScheme,
+        usesSyntaxHighlighting: Bool
+    ) -> String {
+        let isDark = colorScheme == .dark
+        let background = isDark ? "#1f1f1f" : "#fafafa"
+        let foreground = isDark ? "#e6e6e6" : "#24292f"
+        let themeName = isDark ? "github-dark.min" : "github.min"
+        let themeCSS = readAsset(named: themeName, fileExtension: "css")
+        let highlightJS = usesSyntaxHighlighting ? readAsset(named: "highlight.min", fileExtension: "js") : ""
+        let languageClass = usesSyntaxHighlighting
+            ? SyntaxHighlightLanguage.languageClass(for: filePath)
+            : nil
+        let classAttribute = ["hljs", languageClass].compactMap { $0 }.joined(separator: " ")
+        let highlightedScript = usesSyntaxHighlighting && !highlightJS.isEmpty
+            ? "<script>\(highlightJS)</script><script>hljs.highlightAll();</script>"
+            : ""
+
+        return """
+        <!doctype html>
+        <html>
+        <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+        \(themeCSS)
+        html, body {
+          margin: 0;
+          min-height: 100%;
+          background: \(background);
+          color: \(foreground);
+          overflow: auto;
+        }
+        body {
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+          font-size: 13px;
+          line-height: 1.45;
+        }
+        pre {
+          margin: 0;
+          min-width: max-content;
+          min-height: 100vh;
+        }
+        code.hljs {
+          box-sizing: border-box;
+          min-width: max-content;
+          min-height: 100vh;
+          padding: 16px 24px;
+          background: \(background);
+          color: \(foreground);
+          white-space: pre;
+          tab-size: 4;
+          -webkit-user-select: text;
+          user-select: text;
+        }
+        ::selection {
+          background: rgba(90, 160, 255, 0.35);
+        }
+        </style>
+        </head>
+        <body>
+        <pre><code class="\(classAttribute)">\(escapeHTML(content.isEmpty ? " " : content))</code></pre>
+        \(highlightedScript)
+        </body>
+        </html>
+        """
+    }
+
+    private static func readAsset(named name: String, fileExtension ext: String) -> String {
+        guard let url = Bundle.main.url(forResource: name, withExtension: ext, subdirectory: assetDirectory),
+              let text = try? String(contentsOf: url, encoding: .utf8) else {
+            return ""
+        }
+        return text
+    }
+
+    private static func escapeHTML(_ text: String) -> String {
+        var escaped = text
+        escaped = escaped.replacingOccurrences(of: "&", with: "&amp;")
+        escaped = escaped.replacingOccurrences(of: "<", with: "&lt;")
+        escaped = escaped.replacingOccurrences(of: ">", with: "&gt;")
+        escaped = escaped.replacingOccurrences(of: "\"", with: "&quot;")
+        escaped = escaped.replacingOccurrences(of: "'", with: "&#39;")
+        return escaped
+    }
+}
+
+private enum SyntaxHighlightLanguage {
+    static func languageClass(for filePath: String) -> String? {
+        guard let language = language(for: filePath) else { return nil }
+        return "language-\(language)"
+    }
+
+    static func language(for filePath: String) -> String? {
+        let fileName = URL(fileURLWithPath: filePath).lastPathComponent.lowercased()
+        switch fileName {
+        case "dockerfile": return "dockerfile"
+        case "makefile": return "makefile"
+        case ".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".zshenv": return "bash"
+        default: break
+        }
+
+        let ext = URL(fileURLWithPath: filePath).pathExtension.lowercased()
+        switch ext {
+        case "bash", "sh", "zsh": return "bash"
+        case "c", "h": return "c"
+        case "cc", "cpp", "cxx", "hpp", "hh": return "cpp"
+        case "css": return "css"
+        case "diff", "patch": return "diff"
+        case "go": return "go"
+        case "html", "htm", "xml", "svg": return "xml"
+        case "java": return "java"
+        case "js", "cjs", "mjs": return "javascript"
+        case "json", "jsonc": return "json"
+        case "kt", "kts": return "kotlin"
+        case "lua": return "lua"
+        case "md", "markdown": return "markdown"
+        case "php": return "php"
+        case "pl", "pm": return "perl"
+        case "py", "pyw": return "python"
+        case "rb": return "ruby"
+        case "rs": return "rust"
+        case "scala": return "scala"
+        case "sql": return "sql"
+        case "swift": return "swift"
+        case "toml": return "ini"
+        case "ts", "tsx": return "typescript"
+        case "yml", "yaml": return "yaml"
+        default: return nil
         }
     }
 }

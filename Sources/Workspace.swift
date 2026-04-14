@@ -7190,27 +7190,47 @@ final class Workspace: Identifiable, ObservableObject {
     }
 
     private func installMarkdownPanelSubscription(_ markdownPanel: MarkdownPanel) {
-        let subscription = markdownPanel.$displayTitle
-            .removeDuplicates()
+        let subscription = Publishers.CombineLatest3(
+            markdownPanel.$displayTitle.removeDuplicates(),
+            markdownPanel.$renderMode.removeDuplicates(),
+            markdownPanel.$isPreview.removeDuplicates()
+        )
             .receive(on: DispatchQueue.main)
-            .sink { [weak self, weak markdownPanel] newTitle in
+            .sink { [weak self, weak markdownPanel] output in
                 guard let self,
-                      let markdownPanel,
-                      let tabId = self.surfaceIdFromPanelId(markdownPanel.id) else { return }
-                guard let existing = self.bonsplitController.tab(tabId) else { return }
-
-                if self.panelTitles[markdownPanel.id] != newTitle {
-                    self.panelTitles[markdownPanel.id] = newTitle
-                }
-                let resolvedTitle = self.resolvedPanelTitle(panelId: markdownPanel.id, fallback: newTitle)
-                guard existing.title != resolvedTitle else { return }
-                self.bonsplitController.updateTab(
-                    tabId,
-                    title: resolvedTitle,
-                    hasCustomTitle: self.panelCustomTitles[markdownPanel.id] != nil
-                )
+                      let markdownPanel else { return }
+                let (newTitle, _, _) = output
+                self.updateMarkdownPanelPresentation(markdownPanel, title: newTitle)
             }
         panelSubscriptions[markdownPanel.id] = subscription
+    }
+
+    func previewMarkdownPanel() -> MarkdownPanel? {
+        panels.values
+            .compactMap { $0 as? MarkdownPanel }
+            .first(where: { $0.isPreview && !pinnedPanelIds.contains($0.id) })
+    }
+
+    func updateMarkdownPanelPresentation(_ markdownPanel: MarkdownPanel, title: String? = nil) {
+        guard let tabId = surfaceIdFromPanelId(markdownPanel.id),
+              let existing = bonsplitController.tab(tabId) else { return }
+
+        let nextTitle = title ?? markdownPanel.displayTitle
+        if panelTitles[markdownPanel.id] != nextTitle {
+            panelTitles[markdownPanel.id] = nextTitle
+        }
+
+        let resolvedTitle = resolvedPanelTitle(panelId: markdownPanel.id, fallback: nextTitle)
+        let titleUpdate: String? = existing.title == resolvedTitle ? nil : resolvedTitle
+        let iconUpdate: String?? = existing.icon == markdownPanel.displayIcon ? nil : .some(markdownPanel.displayIcon)
+
+        guard titleUpdate != nil || iconUpdate != nil else { return }
+        bonsplitController.updateTab(
+            tabId,
+            title: titleUpdate,
+            icon: iconUpdate,
+            hasCustomTitle: panelCustomTitles[markdownPanel.id] != nil
+        )
     }
 
     private func browserRemoteWorkspaceStatusSnapshot() -> BrowserRemoteWorkspaceStatus? {
@@ -9166,7 +9186,8 @@ final class Workspace: Identifiable, ObservableObject {
         orientation: SplitOrientation,
         insertFirst: Bool = false,
         filePath: String,
-        focus: Bool = true
+        focus: Bool = true,
+        isPreview: Bool = false
     ) -> MarkdownPanel? {
         guard let sourceTabId = surfaceIdFromPanelId(panelId) else { return nil }
         var sourcePaneId: PaneID?
@@ -9180,7 +9201,7 @@ final class Workspace: Identifiable, ObservableObject {
 
         guard let paneId = sourcePaneId else { return nil }
 
-        let markdownPanel = MarkdownPanel(workspaceId: id, filePath: filePath)
+        let markdownPanel = MarkdownPanel(workspaceId: id, filePath: filePath, isPreview: isPreview)
         panels[markdownPanel.id] = markdownPanel
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle
 
@@ -9227,13 +9248,14 @@ final class Workspace: Identifiable, ObservableObject {
     func newMarkdownSurface(
         inPane paneId: PaneID,
         filePath: String,
-        focus: Bool? = nil
+        focus: Bool? = nil,
+        isPreview: Bool = false
     ) -> MarkdownPanel? {
         let shouldFocusNewTab = focus ?? (bonsplitController.focusedPaneId == paneId)
         let previousFocusedPanelId = focusedPanelId
         let previousHostedView = focusedTerminalPanel?.hostedView
 
-        let markdownPanel = MarkdownPanel(workspaceId: id, filePath: filePath)
+        let markdownPanel = MarkdownPanel(workspaceId: id, filePath: filePath, isPreview: isPreview)
         panels[markdownPanel.id] = markdownPanel
         panelTitles[markdownPanel.id] = markdownPanel.displayTitle
 
