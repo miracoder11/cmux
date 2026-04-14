@@ -1,0 +1,104 @@
+name: Fork Release Package
+
+on:
+  push:
+    branches:
+      - "try-*"
+      - "build/**"
+      - "feature/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Build low-cost Release app
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      CMUX_LOW_COST_APP_NAME: cmux_improve
+      CMUX_LOW_COST_BUNDLE_ID: com.cmuxterm.app.debug.cmux.improve
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          submodules: recursive
+
+      - name: Show Xcode
+        run: |
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-path
+
+      - name: Install Zig
+        run: |
+          set -euo pipefail
+          ZIG_REQUIRED="0.15.2"
+          if command -v zig >/dev/null 2>&1 && zig version 2>/dev/null | grep -q "^${ZIG_REQUIRED}"; then
+            echo "zig ${ZIG_REQUIRED} already installed"
+          else
+            ARCH="$(uname -m)"
+            case "$ARCH" in
+              arm64) ZIG_ARCH="aarch64" ;;
+              x86_64) ZIG_ARCH="x86_64" ;;
+              *) echo "Unsupported runner architecture: $ARCH" >&2; exit 1 ;;
+            esac
+            echo "Installing zig ${ZIG_REQUIRED} for ${ARCH}"
+            curl -fSL "https://ziglang.org/download/${ZIG_REQUIRED}/zig-${ZIG_ARCH}-macos-${ZIG_REQUIRED}.tar.xz" -o /tmp/zig.tar.xz
+            tar xf /tmp/zig.tar.xz -C /tmp
+            sudo mkdir -p /usr/local/bin /usr/local/lib
+            sudo cp -f "/tmp/zig-${ZIG_ARCH}-macos-${ZIG_REQUIRED}/zig" /usr/local/bin/zig
+            sudo cp -rf "/tmp/zig-${ZIG_ARCH}-macos-${ZIG_REQUIRED}/lib" /usr/local/lib/zig
+            export PATH="/usr/local/bin:$PATH"
+            zig version
+          fi
+
+      - name: Cache Swift packages
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4
+        with:
+          path: .build/swiftpm-release
+          key: spm-release-${{ hashFiles('GhosttyTabs.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-release-
+
+      - name: Build and package app
+        run: ./scripts/fork-package-release.sh
+
+      - name: Create virtual display
+        run: |
+          set -euo pipefail
+          clang -framework Foundation -framework CoreGraphics \
+            -o /tmp/create-virtual-display scripts/create-virtual-display.m
+          /tmp/create-virtual-display --ready-path /tmp/cmux-display-ready &
+          echo "VDISPLAY_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 60); do
+            [ -f /tmp/cmux-display-ready ] && exit 0
+            sleep 0.5
+          done
+          echo "Virtual display did not become ready" >&2
+          exit 1
+
+      - name: Smoke launch packaged app
+        run: |
+          set -euo pipefail
+          source .build/artifacts/cmux_improve_release/metadata.env
+          CMUX_SMOKE_APP_PATH="$APP_PATH" \
+            CMUX_SMOKE_SOCKET_PATH="$SOCKET_PATH" \
+            CMUX_SMOKE_STABILITY_WAIT=5 \
+            CMUX_SMOKE_SCREENSHOT_PATH=".build/artifacts/cmux_improve_release/cmux-improve-smoke.png" \
+            ./scripts/smoke-test-ci.sh
+          cp /tmp/cmux-smoke-stdout.log .build/artifacts/cmux_improve_release/cmux-smoke-stdout.log 2>/dev/null || true
+          cp /tmp/cmux-debug.log .build/artifacts/cmux_improve_release/cmux-debug.log 2>/dev/null || true
+
+      - name: Upload low-cost Release artifacts
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: cmux-improve-low-cost-release
+          path: |
+            .build/artifacts/cmux_improve_release/cmux_improve-app.zip
+            .build/artifacts/cmux_improve_release/cmux_improve-low-cost.zip
+            .build/artifacts/cmux_improve_release/cmux_improve.dmg
+            .build/artifacts/cmux_improve_release/metadata.env
+            .build/artifacts/cmux_improve_release/cmux-improve-smoke.png
+            .build/artifacts/cmux_improve_release/cmux-smoke-stdout.log
+            .build/artifacts/cmux_improve_release/cmux-debug.log
+          if-no-files-found: error

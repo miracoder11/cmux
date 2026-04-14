@@ -17,15 +17,20 @@ if [ -z "$APP" ]; then
   exit 1
 fi
 echo "App: $APP"
-BINARY="$APP/Contents/MacOS/cmux DEV"
+EXECUTABLE_NAME="$(
+  /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$APP/Contents/Info.plist" 2>/dev/null \
+    || basename "$APP" .app
+)"
+BINARY="$APP/Contents/MacOS/$EXECUTABLE_NAME"
 if [ ! -x "$BINARY" ]; then
   echo "ERROR: App binary not found or not executable: $BINARY"
   exit 1
 fi
+echo "Executable: $BINARY"
 
 # --- Clean up stale socket and any existing instances ---
 rm -f "$SOCKET_PATH"
-pkill -x "cmux DEV" 2>/dev/null || true
+pkill -x "$EXECUTABLE_NAME" 2>/dev/null || true
 sleep 1
 
 # --- Launch the app directly (not via `open`, which can silently fail on CI) ---
