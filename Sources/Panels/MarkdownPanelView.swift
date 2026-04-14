@@ -355,7 +355,7 @@ private struct SyntaxHighlightedCodeView: NSViewRepresentable {
     }
 
     func updateNSView(_ webView: WKWebView, context: Context) {
-        let html = SyntaxHighlightedHTMLBuilder.html(
+        let html = CodeMirrorHTMLBuilder.html(
             content: content,
             filePath: filePath,
             colorScheme: colorScheme,
@@ -371,8 +371,8 @@ private struct SyntaxHighlightedCodeView: NSViewRepresentable {
     }
 }
 
-private enum SyntaxHighlightedHTMLBuilder {
-    private static let assetDirectory = "syntax-highlighting"
+private enum CodeMirrorHTMLBuilder {
+    private static let assetDirectory = "codemirror-preview"
 
     static func html(
         content: String,
@@ -383,23 +383,17 @@ private enum SyntaxHighlightedHTMLBuilder {
         let isDark = colorScheme == .dark
         let background = isDark ? "#1e1e1e" : "#ffffff"
         let foreground = isDark ? "#d4d4d4" : "#1f2328"
-        let gutterBackground = isDark ? "#1e1e1e" : "#fbfbfb"
-        let gutterForeground = isDark ? "#858585" : "#8c959f"
-        let border = isDark ? "#2d2d2d" : "#e6e8eb"
-        let currentLine = isDark ? "#252526" : "#f6f8fa"
-        let selection = isDark ? "rgba(38, 79, 120, 0.92)" : "rgba(0, 95, 184, 0.22)"
-        let themeName = isDark ? "github-dark.min" : "github.min"
-        let themeCSS = readAsset(named: themeName, fileExtension: "css")
-        let highlightJS = usesSyntaxHighlighting ? readAsset(named: "highlight.min", fileExtension: "js") : ""
-        let languageClass = usesSyntaxHighlighting
-            ? SyntaxHighlightLanguage.languageClass(for: filePath)
+        let language = usesSyntaxHighlighting
+            ? SyntaxHighlightLanguage.language(for: filePath)
             : nil
-        let classAttribute = ["hljs", languageClass].compactMap { $0 }.joined(separator: " ")
         let source = content.isEmpty ? " " : content
-        let lineNumbers = lineNumbersHTML(for: source)
-        let highlightedScript = usesSyntaxHighlighting && !highlightJS.isEmpty
-            ? "<script>\(highlightJS)</script><script>hljs.highlightAll();</script>"
-            : ""
+        let payload = payloadJSON(
+            content: source,
+            filePath: filePath,
+            language: language,
+            theme: isDark ? "dark" : "light",
+            usesSyntaxHighlighting: usesSyntaxHighlighting
+        )
 
         return """
         <!doctype html>
@@ -408,130 +402,95 @@ private enum SyntaxHighlightedHTMLBuilder {
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
-        \(themeCSS)
         :root {
           color-scheme: \(isDark ? "dark" : "light");
           --editor-bg: \(background);
           --editor-fg: \(foreground);
-          --gutter-bg: \(gutterBackground);
-          --gutter-fg: \(gutterForeground);
-          --editor-border: \(border);
-          --current-line: \(currentLine);
-          --selection: \(selection);
-          --font-size: 13px;
-          --line-height: 20px;
         }
         html, body {
           margin: 0;
           width: 100%;
           height: 100%;
-          min-height: 100%;
           background: var(--editor-bg);
           color: var(--editor-fg);
-          overflow: auto;
+          overflow: hidden;
         }
         body {
           font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-          font-size: var(--font-size);
-          line-height: var(--line-height);
+          font-size: 13px;
+          line-height: 20px;
           -webkit-font-smoothing: antialiased;
           text-rendering: optimizeLegibility;
         }
-        .editor {
-          display: grid;
-          grid-template-columns: 58px minmax(max-content, 1fr);
-          min-width: max-content;
-          min-height: 100vh;
+        #editor {
+          width: 100%;
+          height: 100vh;
           background: var(--editor-bg);
         }
-        .gutter {
-          position: sticky;
-          left: 0;
-          z-index: 2;
+        #fallback {
+          display: none;
           box-sizing: border-box;
-          min-height: 100vh;
-          padding: 15px 12px 16px 0;
-          background-color: var(--gutter-bg);
-          background-image: linear-gradient(
-            to bottom,
-            transparent 0 15px,
-            var(--current-line) 15px calc(15px + var(--line-height)),
-            transparent calc(15px + var(--line-height))
-          );
-          border-right: 1px solid var(--editor-border);
-          color: var(--gutter-fg);
-          text-align: right;
-          user-select: none;
-          -webkit-user-select: none;
-        }
-        .gutter span {
-          display: block;
-          height: var(--line-height);
-          line-height: var(--line-height);
-        }
-        .gutter span:first-child {
-          color: var(--editor-fg);
-        }
-        pre {
+          width: 100%;
+          height: 100vh;
           margin: 0;
-          min-width: max-content;
+          overflow: auto;
+          padding: 15px 24px;
           min-height: 100vh;
-          background-color: var(--editor-bg);
-          background-image: linear-gradient(
-            to bottom,
-            transparent 0 15px,
-            var(--current-line) 15px calc(15px + var(--line-height)),
-            transparent calc(15px + var(--line-height))
-          );
-        }
-        code.hljs,
-        .hljs {
-          box-sizing: border-box;
-          display: block;
-          min-width: max-content;
-          min-height: 100vh;
-          padding: 15px 28px 16px 18px;
-          background: transparent !important;
+          background: var(--editor-bg);
           color: var(--editor-fg);
           white-space: pre;
           tab-size: 4;
-          -webkit-user-select: text;
-          user-select: text;
-          line-height: var(--line-height);
         }
-        .gutter,
-        pre {
-          grid-row: 1;
-        }
-        ::selection {
-          background: var(--selection);
+        html:not(.cmux-codemirror-ready) #fallback {
+          display: block;
         }
         </style>
         </head>
         <body>
-        <main class="editor">
-          <div class="gutter" aria-hidden="true">\(lineNumbers)</div>
-          <pre><code class="\(classAttribute)">\(escapeHTML(source))</code></pre>
-        </main>
-        \(highlightedScript)
+        <div id="editor"></div>
+        <pre id="fallback">\(escapeHTML(source))</pre>
+        <script src="\(assetDirectory)/codemirror-preview.js"></script>
+        <script>
+        (function() {
+          var payload = \(payload);
+          var fallback = document.getElementById("fallback");
+          if (window.CmuxCodeMirror && typeof window.CmuxCodeMirror.mount === "function") {
+            window.CmuxCodeMirror.mount(document.getElementById("editor"), payload);
+            if (fallback) fallback.style.display = "none";
+          } else if (fallback) {
+            fallback.style.display = "block";
+          }
+        })();
+        </script>
         </body>
         </html>
         """
     }
 
-    private static func lineNumbersHTML(for text: String) -> String {
-        let lineCount = max(1, text.components(separatedBy: "\n").count)
-        return (1...lineCount)
-            .map { "<span>\($0)</span>" }
-            .joined()
-    }
-
-    private static func readAsset(named name: String, fileExtension ext: String) -> String {
-        guard let url = Bundle.main.url(forResource: name, withExtension: ext, subdirectory: assetDirectory),
-              let text = try? String(contentsOf: url, encoding: .utf8) else {
-            return ""
+    private static func payloadJSON(
+        content: String,
+        filePath: String,
+        language: String?,
+        theme: String,
+        usesSyntaxHighlighting: Bool
+    ) -> String {
+        let payload: [String: Any] = [
+            "content": content,
+            "filePath": filePath,
+            "language": language ?? NSNull(),
+            "theme": theme,
+            "usesSyntaxHighlighting": usesSyntaxHighlighting
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload, options: []),
+              var json = String(data: data, encoding: .utf8) else {
+            return "{}"
         }
-        return text
+        json = json.replacingOccurrences(of: "<", with: "\\u003c")
+        json = json.replacingOccurrences(of: ">", with: "\\u003e")
+        json = json.replacingOccurrences(of: "&", with: "\\u0026")
+        json = json.replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+        json = json.replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+        return json
     }
 
     private static func escapeHTML(_ text: String) -> String {
@@ -546,16 +505,12 @@ private enum SyntaxHighlightedHTMLBuilder {
 }
 
 private enum SyntaxHighlightLanguage {
-    static func languageClass(for filePath: String) -> String? {
-        guard let language = language(for: filePath) else { return nil }
-        return "language-\(language)"
-    }
-
     static func language(for filePath: String) -> String? {
         let fileName = URL(fileURLWithPath: filePath).lastPathComponent.lowercased()
         switch fileName {
         case "dockerfile": return "dockerfile"
         case "makefile": return "makefile"
+        case "cmakelists.txt": return "cmake"
         case ".bashrc", ".bash_profile", ".zshrc", ".zprofile", ".zshenv": return "bash"
         default: break
         }
@@ -564,27 +519,31 @@ private enum SyntaxHighlightLanguage {
         switch ext {
         case "bash", "sh", "zsh": return "bash"
         case "c", "h": return "c"
+        case "cmake": return "cmake"
         case "cc", "cpp", "cxx", "hpp", "hh": return "cpp"
         case "css": return "css"
         case "diff", "patch": return "diff"
         case "go": return "go"
-        case "html", "htm", "xml", "svg": return "xml"
+        case "html", "htm": return "html"
         case "java": return "java"
         case "js", "cjs", "mjs": return "javascript"
+        case "jsx": return "jsx"
         case "json", "jsonc": return "json"
-        case "kt", "kts": return "kotlin"
         case "lua": return "lua"
         case "md", "markdown": return "markdown"
         case "php": return "php"
         case "pl", "pm": return "perl"
+        case "ps1", "psm1", "psd1": return "powershell"
+        case "properties", "conf", "ini": return "properties"
         case "py", "pyw": return "python"
         case "rb": return "ruby"
         case "rs": return "rust"
-        case "scala": return "scala"
         case "sql": return "sql"
         case "swift": return "swift"
-        case "toml": return "ini"
-        case "ts", "tsx": return "typescript"
+        case "toml": return "properties"
+        case "ts": return "typescript"
+        case "tsx": return "tsx"
+        case "xml", "svg": return "xml"
         case "yml", "yaml": return "yaml"
         default: return nil
         }
